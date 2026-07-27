@@ -1,6 +1,6 @@
 // Main Application Module
 import { TechnicalAnalysis, fetchFearGreedIndex } from './analysis.js';
-import { t, setLanguage, applyTranslations } from './i18n.js';
+import { t, setLanguage, applyTranslations, currentLang } from './i18n.js';
 
 // App State
 const state = {
