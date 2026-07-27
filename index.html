@@ -97,8 +97,26 @@
       
       <!-- Chart -->
       <div class="chart-section">
-        <h3 data-i18n="chartTitle">نمودار قیمت و تحلیل تکنیکال</h3>
-        <div id="tradingview-widget"></div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <h3 data-i18n="chartTitle" style="margin: 0;">نمودار قیمت و تحلیل تکنیکال</h3>
+          <div style="display: flex; gap: 0.5rem;">
+            <button id="chart-internal-btn" class="chart-tab active" onclick="switchChart('internal')">📊 Internal</button>
+            <button id="chart-tv-btn" class="chart-tab" onclick="switchChart('tradingview')">📈 TradingView</button>
+          </div>
+        </div>
+        
+        <!-- Internal Chart -->
+        <div id="internal-chart-container">
+          <canvas id="price-chart" style="width: 100%; height: 500px; border-radius: 8px;"></canvas>
+          <div style="display: flex; gap: 1rem; margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted);">
+            <span style="color: #f59e0b;">━━ EMA 9</span>
+            <span style="color: #8b5cf6;">━━ EMA 21</span>
+            <span style="color: #3b82f6;">━━ Bollinger Bands</span>
+          </div>
+        </div>
+        
+        <!-- TradingView Chart (hidden by default) -->
+        <div id="tradingview-widget" style="display: none;"></div>
       </div>
       
       <!-- Technical Indicators -->
@@ -213,5 +231,5 @@
       });
     }
   </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a21ddf61a9dfcd05',t:'MTc4NTE3ODY3NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
