@@ -374,6 +374,32 @@ body[dir="rtl"] {
 .signal-item .value.leverage { color: var(--accent-purple); }
 
 /* ============================================
+   Chart Tabs
+   ============================================ */
+.chart-tab {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 0.4rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.3s;
+}
+
+.chart-tab:hover {
+  border-color: var(--accent-purple);
+  color: var(--text-primary);
+}
+
+.chart-tab.active {
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+  border-color: transparent;
+  color: white;
+  font-weight: 600;
+}
+
+/* ============================================
    Chart Section
    ============================================ */
 .chart-section {
