@@ -1,6 +1,7 @@
 // Main Application Module
 import { TechnicalAnalysis, fetchFearGreedIndex } from './analysis.js';
 import { t, setLanguage, applyTranslations, currentLang } from './i18n.js';
+import { CandlestickChart } from './chart.js';
 
 // App State
 const state = {
@@ -24,6 +25,8 @@ const state = {
 };
 
 const analysis = new TechnicalAnalysis();
+let priceChart = null;
+let currentChartType = 'internal';
 
 // Crypto options
 const cryptoOptions = [
@@ -541,12 +544,89 @@ async function runAnalysis() {
 function renderResults(result) {
   renderSignalCard(result);
   renderIndicators(result);
+  renderInternalChart(result);
   renderFearGreed(state.fearGreedData);
   renderTopTraders(result.topTraders);
   renderProbabilityChart(result);
   renderNotifications();
   updateLastUpdateTime();
 }
+
+// Render Internal Chart
+function renderInternalChart(result) {
+  if (!priceChart || currentChartType !== 'internal') return;
+  
+  const candles = state.candleData;
+  if (!candles || candles.length === 0) return;
+  
+  const indicators = {};
+  
+  // Calculate EMAs for chart display
+  const closes = candles.map(c => c.close);
+  const ema9 = analysis.calculateEMA(closes, 9);
+  const ema21 = analysis.calculateEMA(closes, 21);
+  
+  indicators.ema9 = ema9;
+  indicators.ema21 = ema21;
+  
+  // Calculate Bollinger Bands
+  const bb = analysis.calculateBollingerBands(closes);
+  if (bb && bb.upper) {
+    // We need the full BB arrays, recalculate
+    const period = 20;
+    const bbUpper = [];
+    const bbMiddle = [];
+    const bbLower = [];
+    
+    for (let i = period - 1; i < closes.length; i++) {
+      const slice = closes.slice(i - period + 1, i + 1);
+      const sma = slice.reduce((a, b) => a + b) / period;
+      const variance = slice.reduce((a, b) => a + Math.pow(b - sma, 2), 0) / period;
+      const std = Math.sqrt(variance);
+      
+      bbUpper.push(sma + 2 * std);
+      bbMiddle.push(sma);
+      bbLower.push(sma - 2 * std);
+    }
+    
+    indicators.bb = { upper: bbUpper, middle: bbMiddle, lower: bbLower };
+  }
+  
+  priceChart.setData(candles, indicators);
+}
+
+// Switch between chart types
+function switchChart(type) {
+  currentChartType = type;
+  
+  const internalBtn = document.getElementById('chart-internal-btn');
+  const tvBtn = document.getElementById('chart-tv-btn');
+  const internalContainer = document.getElementById('internal-chart-container');
+  const tvContainer = document.getElementById('tradingview-widget');
+  
+  if (type === 'internal') {
+    internalBtn.classList.add('active');
+    tvBtn.classList.remove('active');
+    internalContainer.style.display = 'block';
+    tvContainer.style.display = 'none';
+    
+    // Render internal chart with current data
+    if (state.lastAnalysis) {
+      renderInternalChart(state.lastAnalysis);
+    }
+  } else {
+    tvBtn.classList.add('active');
+    internalBtn.classList.remove('active');
+    tvContainer.style.display = 'block';
+    internalContainer.style.display = 'none';
+    
+    // Initialize TradingView
+    initTradingView(state.crypto, getTVInterval(state.timeframe));
+  }
+}
+
+// Make switchChart available globally
+window.switchChart = switchChart;
 
 function renderSignalCard(result) {
   const card = document.getElementById('signal-card');
@@ -1055,14 +1135,22 @@ async function initApp() {
   cryptoSelect?.addEventListener('change', (e) => {
     state.crypto = e.target.value;
     localStorage.setItem('cryptoCoin', state.crypto);
-    initTradingView(state.crypto, getTVInterval(state.timeframe));
+    
+    // Only update TradingView if it's the active chart
+    if (currentChartType === 'tradingview') {
+      initTradingView(state.crypto, getTVInterval(state.timeframe));
+    }
     runAnalysis();
   });
   
   tfSelect?.addEventListener('change', (e) => {
     state.timeframe = e.target.value;
     localStorage.setItem('cryptoTimeframe', state.timeframe);
-    initTradingView(state.crypto, getTVInterval(state.timeframe));
+    
+    // Only update TradingView if it's the active chart
+    if (currentChartType === 'tradingview') {
+      initTradingView(state.crypto, getTVInterval(state.timeframe));
+    }
     runAnalysis();
   });
   
@@ -1119,8 +1207,8 @@ async function initApp() {
   if (cryptoSelect) cryptoSelect.value = state.crypto;
   if (tfSelect) tfSelect.value = state.timeframe;
   
-  // Initialize TradingView
-  initTradingView(state.crypto, getTVInterval(state.timeframe));
+  // Initialize internal chart
+  priceChart = new CandlestickChart('price-chart');
   
   // Render notification settings
   renderNotifSettings();
