@@ -1,0 +1,44 @@
+{
+  "name": "Crypto Analyzer Pro - Smart Trading Signals",
+  "short_name": "CryptoAnalyzer",
+  "description": "Advanced cryptocurrency trading analysis with AI-powered signals, technical indicators, probability charts, and smart push notifications for long/short positions.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a1a",
+  "theme_color": "#0a0a1a",
+  "orientation": "any",
+  "lang": "fa",
+  "dir": "rtl",
+  "categories": ["finance", "utilities"],
+  "icons": [
+    {
+      "src": "img/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "img/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Analyze Bitcoin",
+      "short_name": "BTC Analysis",
+      "description": "Quick Bitcoin analysis",
+      "url": "/?crypto=bitcoin",
+      "icons": [{ "src": "img/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Analyze Ethereum",
+      "short_name": "ETH Analysis",
+      "description": "Quick Ethereum analysis",
+      "url": "/?crypto=ethereum",
+      "icons": [{ "src": "img/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
