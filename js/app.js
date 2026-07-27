@@ -19,7 +19,8 @@ const state = {
   })),
   fearGreedData: null,
   candleData: null,
-  lastSignal: null
+  lastSignal: null,
+  dataSource: null
 };
 
 const analysis = new TechnicalAnalysis();
@@ -54,85 +55,367 @@ const timeframeOptions = [
   { id: '1M', label: '1 Month', tvInterval: 'M', tvIntervalType: 'month' }
 ];
 
-// Fetch crypto data from CoinGecko
-async function fetchCryptoData(cryptoId, days) {
-  const map = { '5m': 1, '15m': 2, '30m': 3, '1h': 5, '4h': 15, '1d': 90, '1w': 365, '1M': 730 };
-  const d = map[days] || 90;
+// ============================================
+// Multiple Data Sources (with global access)
+// ============================================
+
+// Get Binance-compatible symbol
+function getBinanceSymbol(coingeckoId) {
+  const map = {
+    'bitcoin': 'BTC-USDT', 'ethereum': 'ETH-USDT', 'binancecoin': 'BNB-USDT',
+    'ripple': 'XRP-USDT', 'cardano': 'ADA-USDT', 'solana': 'SOL-USDT',
+    'dogecoin': 'DOGE-USDT', 'polkadot': 'DOT-USDT', 'avalanche-2': 'AVAX-USDT',
+    'chainlink': 'LINK-USDT', 'tron': 'TRX-USDT', 'litecoin': 'LTC-USDT',
+    'matic-network': 'MATIC-USDT', 'uniswap': 'UNI-USDT', 'stellar': 'XLM-USDT'
+  };
+  return map[coingeckoId] || (coingeckoId.toUpperCase() + '-USDT');
+}
+
+function getKucoinSymbol(coingeckoId) {
+  const map = {
+    'bitcoin': 'BTC-USDT', 'ethereum': 'ETH-USDT', 'binancecoin': 'BNB-USDT',
+    'ripple': 'XRP-USDT', 'cardano': 'ADA-USDT', 'solana': 'SOL-USDT',
+    'dogecoin': 'DOGE-USDT', 'polkadot': 'DOT-USDT', 'avalanche-2': 'AVAX-USDT',
+    'chainlink': 'LINK-USDT', 'tron': 'TRX-USDT', 'litecoin': 'LTC-USDT',
+    'matic-network': 'MATIC-USDT', 'uniswap': 'UNI-USDT', 'stellar': 'XLM-USDT'
+  };
+  return map[coingeckoId] || (coingeckoId.toUpperCase() + '-USDT');
+}
+
+function getTimeframeParams(timeframe) {
+  const map = {
+    '5m':  { type: 'min', value: 5,  kucoinType: '5min',  candles: 200 },
+    '15m': { type: 'min', value: 15, kucoinType: '15min', candles: 200 },
+    '30m': { type: 'min', value: 30, kucoinType: '30min', candles: 200 },
+    '1h':  { type: 'hour', value: 1, kucoinType: '1hour', candles: 200 },
+    '4h':  { type: 'hour', value: 4, kucoinType: '4hour', candles: 200 },
+    '1d':  { type: 'day', value: 1,  kucoinType: '1day',  candles: 200 },
+    '1w':  { type: 'week', value: 1, kucoinType: '1week', candles: 100 },
+    '1M':  { type: 'month', value: 1, kucoinType: '1month', candles: 60 }
+  };
+  return map[timeframe] || { type: 'day', value: 1, kucoinType: '1day', candles: 200 };
+}
+
+// ✅ Source 1: Bybit API (works globally, free, no key needed)
+async function fetchFromBybit(cryptoId, timeframe) {
+  const symbolMap = {
+    'bitcoin': 'BTCUSDT', 'ethereum': 'ETHUSDT', 'binancecoin': 'BNBUSDT',
+    'ripple': 'XRPUSDT', 'cardano': 'ADAUSDT', 'solana': 'SOLUSDT',
+    'dogecoin': 'DOGEUSDT', 'polkadot': 'DOTUSDT', 'avalanche-2': 'AVAXUSDT',
+    'chainlink': 'LINKUSDT', 'tron': 'TRXUSDT', 'litecoin': 'LTCUSDT',
+    'matic-network': 'MATICUSDT', 'uniswap': 'UNIUSDT', 'stellar': 'XLMUSDT'
+  };
+  
+  const intervalMap = {
+    '5m': '5', '15m': '15', '30m': '30', '1h': '60',
+    '4h': '240', '1d': 'D', '1w': 'W', '1M': 'M'
+  };
+  
+  const symbol = symbolMap[cryptoId] || (cryptoId.toUpperCase() + 'USDT');
+  const interval = intervalMap[timeframe] || 'D';
+  const limit = 200;
+  
+  const url = `https://api.bybit.com/v5/market/kline?category=spot&symbol=${symbol}&interval=${interval}&limit=${limit}`;
+  
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
   
   try {
-    const url = `https://api.coingecko.com/api/v3/coins/${cryptoId}/ohlc?vs_currency=usd&days=${d}`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error('API error');
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    
+    if (!response.ok) throw new Error(`Bybit HTTP ${response.status}`);
     const data = await response.json();
     
-    return data.map(item => ({
+    if (data.retCode !== 0) throw new Error(`Bybit error: ${data.retMsg}`);
+    if (!data.result || !data.result.list) throw new Error('Empty Bybit response');
+    
+    // Bybit returns newest first, reverse it
+    const candles = data.result.list.map(k => ({
+      time: parseInt(k[0]),
+      open: parseFloat(k[1]),
+      high: parseFloat(k[2]),
+      low: parseFloat(k[3]),
+      close: parseFloat(k[4]),
+      volume: parseFloat(k[5])
+    })).reverse();
+    
+    console.log(`✅ Bybit: ${candles.length} candles for ${symbol}`);
+    return candles;
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
+  }
+}
+
+// ✅ Source 2: KuCoin API (works globally)
+async function fetchFromKucoin(cryptoId, timeframe) {
+  const symbol = getKucoinSymbol(cryptoId);
+  const params = getTimeframeParams(timeframe);
+  
+  const now = Math.floor(Date.now() / 1000);
+  const durationSeconds = params.value * { min: 60, hour: 3600, day: 86400, week: 604800, month: 2592000 }[params.type] * params.candles;
+  const startAt = now - durationSeconds;
+  
+  const url = `https://api.kucoin.com/api/v1/market/candles?type=${params.kucoinType}&symbol=${symbol}&startAt=${startAt}&endAt=${now}`;
+  
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    
+    if (!response.ok) throw new Error(`KuCoin HTTP ${response.status}`);
+    const data = await response.json();
+    
+    if (!data.data || data.data.length === 0) throw new Error('Empty KuCoin response');
+    
+    const candles = data.data.map(k => ({
+      time: parseInt(k[0]) * 1000,
+      open: parseFloat(k[1]),
+      high: parseFloat(k[3]),  // KuCoin: [time, open, close, high, low, ...]
+      low: parseFloat(k[4]),
+      close: parseFloat(k[2]),
+      volume: parseFloat(k[5])
+    })).sort((a, b) => a.time - b.time);
+    
+    console.log(`✅ KuCoin: ${candles.length} candles for ${symbol}`);
+    return candles;
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
+  }
+}
+
+// ✅ Source 3: Gate.io API (works globally)
+async function fetchFromGateio(cryptoId, timeframe) {
+  const symbolMap = {
+    'bitcoin': 'BTC_USDT', 'ethereum': 'ETH_USDT', 'binancecoin': 'BNB_USDT',
+    'ripple': 'XRP_USDT', 'cardano': 'ADA_USDT', 'solana': 'SOL_USDT',
+    'dogecoin': 'DOGE_USDT', 'polkadot': 'DOT_USDT', 'avalanche-2': 'AVAX_USDT',
+    'chainlink': 'LINK_USDT', 'tron': 'TRX_USDT', 'litecoin': 'LTC_USDT',
+    'matic-network': 'MATIC_USDT', 'uniswap': 'UNI_USDT', 'stellar': 'XLM_USDT'
+  };
+  
+  const intervalMap = {
+    '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1h',
+    '4h': '4h', '1d': '1d', '1w': '7d', '1M': '30d'
+  };
+  
+  const symbol = symbolMap[cryptoId] || (cryptoId.toUpperCase().replace('-', '_') + '_USDT');
+  const interval = intervalMap[timeframe] || '1d';
+  const limit = 200;
+  
+  const url = `https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=${symbol}&interval=${interval}&limit=${limit}`;
+  
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    
+    if (!response.ok) throw new Error(`Gate.io HTTP ${response.status}`);
+    const data = await response.json();
+    
+    if (!Array.isArray(data) || data.length === 0) throw new Error('Empty Gate.io response');
+    
+    // Gate.io format: [timestamp, volume, close, high, low, open, ...]
+    const candles = data.map(k => ({
+      time: parseInt(k[0]) * 1000,
+      open: parseFloat(k[5]),
+      high: parseFloat(k[3]),
+      low: parseFloat(k[4]),
+      close: parseFloat(k[2]),
+      volume: parseFloat(k[1])
+    })).sort((a, b) => a.time - b.time);
+    
+    console.log(`✅ Gate.io: ${candles.length} candles for ${symbol}`);
+    return candles;
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
+  }
+}
+
+// ✅ Source 4: CoinGecko (slower but reliable)
+async function fetchFromCoinGecko(cryptoId, timeframe) {
+  // Use larger day ranges to get more candles
+  const map = { '5m': 2, '15m': 5, '30m': 10, '1h': 20, '4h': 60, '1d': 365, '1w': 730, '1M': 1000 };
+  const d = map[timeframe] || 365;
+  
+  const url = `https://api.coingecko.com/api/v3/coins/${cryptoId}/ohlc?vs_currency=usd&days=${d}`;
+  
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    
+    if (!response.ok) throw new Error(`CoinGecko HTTP ${response.status}`);
+    const data = await response.json();
+    
+    if (!Array.isArray(data) || data.length === 0) throw new Error('Empty CoinGecko response');
+    
+    const candles = data.map(item => ({
       time: item[0],
       open: item[1],
       high: item[2],
       low: item[3],
       close: item[4],
-      volume: Math.random() * 1e9 // CoinGecko OHLC doesn't include volume
+      volume: 0
     }));
+    
+    console.log(`✅ CoinGecko: ${candles.length} candles for ${cryptoId}`);
+    return candles;
   } catch (e) {
-    console.warn('CoinGecko OHLC failed, trying market_chart');
-    // Fallback: use market_chart
-    try {
-      const url = `https://api.coingecko.com/api/v3/coins/${cryptoId}/market_chart?vs_currency=usd&days=${d}`;
-      const response = await fetch(url);
-      const data = await response.json();
-      const prices = data.prices;
-      
-      // Convert to candles
-      const candles = [];
-      const candleSize = d <= 2 ? 3600000 : d <= 15 ? 14400000 : 86400000;
-      let i = 0;
-      while (i < prices.length) {
-        const candleStart = prices[i][0];
-        const candleEnd = candleStart + candleSize;
-        const candlePrices = prices.filter(p => p[0] >= candleStart && p[0] < candleEnd);
-        
-        if (candlePrices.length > 0) {
-          const highs = candlePrices.map(p => p[1]);
-          const lows = candlePrices.map(p => p[1]);
-          candles.push({
-            time: candleStart,
-            open: candlePrices[0][1],
-            high: Math.max(...highs),
-            low: Math.min(...lows),
-            close: candlePrices[candlePrices.length - 1][1],
-            volume: Math.random() * 1e9
-          });
-        }
-        i += Math.max(candlePrices.length, 1);
-      }
-      return candles;
-    } catch (e2) {
-      console.error('All API calls failed:', e2);
-      return generateFallbackData(cryptoId, d);
-    }
+    clearTimeout(timeout);
+    throw e;
   }
 }
 
-// Generate fallback data for demo
-function generateFallbackData(cryptoId, days) {
-  const bases = { bitcoin: 65000, ethereum: 3500, binancecoin: 580, ripple: 0.55, cardano: 0.45, solana: 140 };
+// ✅ Source 4: CoinGecko market_chart (best granularity)
+async function fetchFromCoinGeckoChart(cryptoId, timeframe) {
+  const map = { '5m': 1, '15m': 2, '30m': 3, '1h': 7, '4h': 30, '1d': 180, '1w': 365, '1M': 1000 };
+  const d = map[timeframe] || 180;
+  
+  const url = `https://api.coingecko.com/api/v3/coins/${cryptoId}/market_chart?vs_currency=usd&days=${d}`;
+  
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    
+    if (!response.ok) throw new Error(`CoinGecko chart HTTP ${response.status}`);
+    const data = await response.json();
+    
+    if (!data.prices || data.prices.length < 30) throw new Error('Not enough price data');
+    
+    // Group prices into candles
+    const intervalMs = {
+      '5m': 300000, '15m': 900000, '30m': 1800000,
+      '1h': 3600000, '4h': 14400000, '1d': 86400000,
+      '1w': 604800000, '1M': 2592000000
+    };
+    const candleSize = intervalMs[timeframe] || 86400000;
+    
+    const candles = [];
+    const prices = data.prices;
+    let i = 0;
+    
+    while (i < prices.length) {
+      const candleStart = prices[i][0];
+      const candleEnd = candleStart + candleSize;
+      const inCandle = [];
+      
+      while (i < prices.length && prices[i][0] < candleEnd) {
+        inCandle.push(prices[i]);
+        i++;
+      }
+      
+      if (inCandle.length > 0) {
+        candles.push({
+          time: candleStart,
+          open: inCandle[0][1],
+          high: Math.max(...inCandle.map(p => p[1])),
+          low: Math.min(...inCandle.map(p => p[1])),
+          close: inCandle[inCandle.length - 1][1],
+          volume: 0
+        });
+      }
+    }
+    
+    console.log(`✅ CoinGecko Chart: ${candles.length} candles for ${cryptoId}`);
+    return candles;
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
+  }
+}
+
+// ✅ MAIN: Fetch with cascading fallbacks
+// Order: KuCoin (global) → Gate.io (global) → CoinGecko → Fallback simulation
+async function fetchCryptoData(cryptoId, timeframe) {
+  const coinInfo = cryptoOptions.find(c => c.id === cryptoId);
+  const coinName = coinInfo ? coinInfo.symbol : cryptoId;
+  
+  const sources = [
+    { name: 'KuCoin', fn: () => fetchFromKucoin(cryptoId, timeframe) },
+    { name: 'Gate.io', fn: () => fetchFromGateio(cryptoId, timeframe) },
+    { name: 'CoinGecko', fn: () => fetchFromCoinGecko(cryptoId, timeframe) }
+  ];
+  
+  for (const source of sources) {
+    try {
+      console.log(`📡 Trying ${source.name} for ${coinName}...`);
+      const data = await source.fn();
+      if (data && data.length >= 30) {
+        console.log(`✅ Success: ${source.name} returned ${data.length} candles`);
+        state.dataSource = source.name;
+        return data;
+      }
+      console.warn(`⚠️ ${source.name}: only ${data?.length || 0} candles (need 30+)`);
+    } catch (e) {
+      console.warn(`❌ ${source.name} failed: ${e.message}`);
+    }
+  }
+  
+  // Ultimate fallback: simulated data
+  console.warn('⚠️ All APIs failed. Using simulated data for demo.');
+  state.dataSource = 'Demo';
+  return generateFallbackData(cryptoId, timeframe);
+}
+
+// Generate realistic fallback data for demo/testing
+function generateFallbackData(cryptoId, timeframe) {
+  const bases = {
+    bitcoin: 67000, ethereum: 3500, binancecoin: 580, ripple: 0.55,
+    cardano: 0.45, solana: 170, dogecoin: 0.16, polkadot: 7,
+    'avalanche-2': 35, chainlink: 14, tron: 0.12, litecoin: 80,
+    'matic-network': 0.70, uniswap: 7.5, stellar: 0.10
+  };
   const base = bases[cryptoId] || 100;
+  
+  // Candle interval in ms based on timeframe
+  const intervalMs = {
+    '5m': 300000, '15m': 900000, '30m': 1800000,
+    '1h': 3600000, '4h': 14400000, '1d': 86400000,
+    '1w': 604800000, '1M': 2592000000
+  };
+  const interval = intervalMs[timeframe] || 86400000;
+  const numCandles = 200;
+  
   const candles = [];
   let price = base;
-  const numCandles = Math.min(days * 24, 500);
+  
+  // Generate a trend-biased random walk
+  const trendBias = (Math.random() - 0.5) * 0.002; // slight trend
   
   for (let i = 0; i < numCandles; i++) {
-    const change = (Math.random() - 0.48) * base * 0.02;
-    price += change;
-    const volatility = base * 0.01;
+    const volatility = base * 0.008; // 0.8% per candle
+    const change = (Math.random() - 0.5 + trendBias) * volatility;
+    
+    const open = price;
+    const close = price + change;
+    const wickUp = Math.random() * volatility * 0.5;
+    const wickDown = Math.random() * volatility * 0.5;
+    const high = Math.max(open, close) + wickUp;
+    const low = Math.min(open, close) - wickDown;
+    
     candles.push({
-      time: Date.now() - (numCandles - i) * 3600000,
-      open: price,
-      high: price + Math.random() * volatility,
-      low: price - Math.random() * volatility,
-      close: price + (Math.random() - 0.5) * volatility,
-      volume: Math.random() * 1e9
+      time: Date.now() - (numCandles - i) * interval,
+      open: Math.max(open, base * 0.01),
+      high: Math.max(high, base * 0.01),
+      low: Math.max(low, base * 0.005),
+      close: Math.max(close, base * 0.01),
+      volume: (Math.random() * 0.5 + 0.5) * 1e9
     });
+    
+    price = Math.max(close, base * 0.1); // keep price positive
   }
   return candles;
 }
@@ -206,13 +489,19 @@ function getTVInterval(timeframeId) {
 async function runAnalysis() {
   showLoading(true);
   
+  const coinInfo = cryptoOptions.find(c => c.id === state.crypto);
+  const coinName = coinInfo ? coinInfo.symbol : state.crypto;
+  
   try {
-    // Fetch data
+    // Fetch data (with cascading fallbacks built in)
     const candles = await fetchCryptoData(state.crypto, state.timeframe);
     state.candleData = candles;
     
     if (!candles || candles.length < 30) {
-      showStatus('Insufficient data for analysis', 'error');
+      const msg = currentLang === 'fa'
+        ? `⚠️ داده‌ای برای ${coinName} در این تایم‌فریم موجود نیست. ارز یا تایم‌فریم دیگری انتخاب کنید.`
+        : `⚠️ No data available for ${coinName} on this timeframe. Try a different coin or timeframe.`;
+      showStatus(msg, 'error');
       showLoading(false);
       return;
     }
@@ -701,10 +990,11 @@ function showLoading(show) {
 function showStatus(msg, type = 'info') {
   const status = document.getElementById('status-bar');
   if (status) {
-    status.textContent = msg;
+    status.innerHTML = msg + (type === 'error' ? ' <button onclick="runAnalysis()" style="margin-left:10px;padding:2px 10px;border-radius:4px;border:1px solid white;background:transparent;color:white;cursor:pointer;">🔄 Retry</button>' : '');
     status.className = `status-bar status-${type}`;
     status.style.display = 'block';
-    setTimeout(() => { status.style.display = 'none'; }, 5000);
+    const timeout = type === 'error' ? 15000 : 5000;
+    setTimeout(() => { status.style.display = 'none'; }, timeout);
   }
 }
 
@@ -712,7 +1002,9 @@ function updateLastUpdateTime() {
   const el = document.getElementById('last-update');
   if (el) {
     const time = new Date().toLocaleString(currentLang === 'fa' ? 'fa-IR' : 'en-US');
-    el.textContent = `${t('lastUpdate')}: ${time}`;
+    const source = state.dataSource || 'API';
+    const sourceLabel = currentLang === 'fa' ? 'منبع داده' : 'Data source';
+    el.textContent = `${t('lastUpdate')}: ${time} | ${sourceLabel}: ${source}`;
   }
 }
 
