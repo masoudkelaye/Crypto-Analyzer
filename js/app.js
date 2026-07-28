@@ -59,20 +59,8 @@ const timeframeOptions = [
 ];
 
 // ============================================
-// Multiple Data Sources (with global access)
+// Multiple Data Sources
 // ============================================
-
-// Get Binance-compatible symbol
-function getBinanceSymbol(coingeckoId) {
-  const map = {
-    'bitcoin': 'BTC-USDT', 'ethereum': 'ETH-USDT', 'binancecoin': 'BNB-USDT',
-    'ripple': 'XRP-USDT', 'cardano': 'ADA-USDT', 'solana': 'SOL-USDT',
-    'dogecoin': 'DOGE-USDT', 'polkadot': 'DOT-USDT', 'avalanche-2': 'AVAX-USDT',
-    'chainlink': 'LINK-USDT', 'tron': 'TRX-USDT', 'litecoin': 'LTC-USDT',
-    'matic-network': 'MATIC-USDT', 'uniswap': 'UNI-USDT', 'stellar': 'XLM-USDT'
-  };
-  return map[coingeckoId] || (coingeckoId.toUpperCase() + '-USDT');
-}
 
 function getKucoinSymbol(coingeckoId) {
   const map = {
@@ -99,59 +87,7 @@ function getTimeframeParams(timeframe) {
   return map[timeframe] || { type: 'day', value: 1, kucoinType: '1day', candles: 200 };
 }
 
-// ✅ Source 1: Bybit API (works globally, free, no key needed)
-async function fetchFromBybit(cryptoId, timeframe) {
-  const symbolMap = {
-    'bitcoin': 'BTCUSDT', 'ethereum': 'ETHUSDT', 'binancecoin': 'BNBUSDT',
-    'ripple': 'XRPUSDT', 'cardano': 'ADAUSDT', 'solana': 'SOLUSDT',
-    'dogecoin': 'DOGEUSDT', 'polkadot': 'DOTUSDT', 'avalanche-2': 'AVAXUSDT',
-    'chainlink': 'LINKUSDT', 'tron': 'TRXUSDT', 'litecoin': 'LTCUSDT',
-    'matic-network': 'MATICUSDT', 'uniswap': 'UNIUSDT', 'stellar': 'XLMUSDT'
-  };
-  
-  const intervalMap = {
-    '5m': '5', '15m': '15', '30m': '30', '1h': '60',
-    '4h': '240', '1d': 'D', '1w': 'W', '1M': 'M'
-  };
-  
-  const symbol = symbolMap[cryptoId] || (cryptoId.toUpperCase() + 'USDT');
-  const interval = intervalMap[timeframe] || 'D';
-  const limit = 200;
-  
-  const url = `https://api.bybit.com/v5/market/kline?category=spot&symbol=${symbol}&interval=${interval}&limit=${limit}`;
-  
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
-  
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
-    
-    if (!response.ok) throw new Error(`Bybit HTTP ${response.status}`);
-    const data = await response.json();
-    
-    if (data.retCode !== 0) throw new Error(`Bybit error: ${data.retMsg}`);
-    if (!data.result || !data.result.list) throw new Error('Empty Bybit response');
-    
-    // Bybit returns newest first, reverse it
-    const candles = data.result.list.map(k => ({
-      time: parseInt(k[0]),
-      open: parseFloat(k[1]),
-      high: parseFloat(k[2]),
-      low: parseFloat(k[3]),
-      close: parseFloat(k[4]),
-      volume: parseFloat(k[5])
-    })).reverse();
-    
-    console.log(`✅ Bybit: ${candles.length} candles for ${symbol}`);
-    return candles;
-  } catch (e) {
-    clearTimeout(timeout);
-    throw e;
-  }
-}
-
-// ✅ Source 2: KuCoin API (works globally)
+// ✅ Source 1: KuCoin API
 async function fetchFromKucoin(cryptoId, timeframe) {
   const symbol = getKucoinSymbol(cryptoId);
   const params = getTimeframeParams(timeframe);
@@ -177,13 +113,14 @@ async function fetchFromKucoin(cryptoId, timeframe) {
     const candles = data.data.map(k => ({
       time: parseInt(k[0]) * 1000,
       open: parseFloat(k[1]),
-      high: parseFloat(k[3]),  // KuCoin: [time, open, close, high, low, ...]
-      low: parseFloat(k[4]),
       close: parseFloat(k[2]),
+      high: parseFloat(k[3]),
+      low: parseFloat(k[4]),
       volume: parseFloat(k[5])
     })).sort((a, b) => a.time - b.time);
     
     console.log(`✅ KuCoin: ${candles.length} candles for ${symbol}`);
+    console.log(`   Latest price: $${candles[candles.length-1].close}`);
     return candles;
   } catch (e) {
     clearTimeout(timeout);
@@ -191,7 +128,7 @@ async function fetchFromKucoin(cryptoId, timeframe) {
   }
 }
 
-// ✅ Source 3: Gate.io API (works globally)
+// ✅ Source 2: Gate.io API
 async function fetchFromGateio(cryptoId, timeframe) {
   const symbolMap = {
     'bitcoin': 'BTC_USDT', 'ethereum': 'ETH_USDT', 'binancecoin': 'BNB_USDT',
@@ -228,13 +165,14 @@ async function fetchFromGateio(cryptoId, timeframe) {
     const candles = data.map(k => ({
       time: parseInt(k[0]) * 1000,
       open: parseFloat(k[5]),
+      close: parseFloat(k[2]),
       high: parseFloat(k[3]),
       low: parseFloat(k[4]),
-      close: parseFloat(k[2]),
       volume: parseFloat(k[1])
     })).sort((a, b) => a.time - b.time);
     
     console.log(`✅ Gate.io: ${candles.length} candles for ${symbol}`);
+    console.log(`   Latest price: $${candles[candles.length-1].close}`);
     return candles;
   } catch (e) {
     clearTimeout(timeout);
@@ -242,9 +180,8 @@ async function fetchFromGateio(cryptoId, timeframe) {
   }
 }
 
-// ✅ Source 4: CoinGecko (slower but reliable)
+// ✅ Source 3: CoinGecko
 async function fetchFromCoinGecko(cryptoId, timeframe) {
-  // Use larger day ranges to get more candles
   const map = { '5m': 2, '15m': 5, '30m': 10, '1h': 20, '4h': 60, '1d': 365, '1w': 730, '1M': 1000 };
   const d = map[timeframe] || 365;
   
@@ -265,74 +202,14 @@ async function fetchFromCoinGecko(cryptoId, timeframe) {
     const candles = data.map(item => ({
       time: item[0],
       open: item[1],
+      close: item[4],
       high: item[2],
       low: item[3],
-      close: item[4],
       volume: 0
     }));
     
     console.log(`✅ CoinGecko: ${candles.length} candles for ${cryptoId}`);
-    return candles;
-  } catch (e) {
-    clearTimeout(timeout);
-    throw e;
-  }
-}
-
-// ✅ Source 4: CoinGecko market_chart (best granularity)
-async function fetchFromCoinGeckoChart(cryptoId, timeframe) {
-  const map = { '5m': 1, '15m': 2, '30m': 3, '1h': 7, '4h': 30, '1d': 180, '1w': 365, '1M': 1000 };
-  const d = map[timeframe] || 180;
-  
-  const url = `https://api.coingecko.com/api/v3/coins/${cryptoId}/market_chart?vs_currency=usd&days=${d}`;
-  
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
-  
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
-    
-    if (!response.ok) throw new Error(`CoinGecko chart HTTP ${response.status}`);
-    const data = await response.json();
-    
-    if (!data.prices || data.prices.length < 30) throw new Error('Not enough price data');
-    
-    // Group prices into candles
-    const intervalMs = {
-      '5m': 300000, '15m': 900000, '30m': 1800000,
-      '1h': 3600000, '4h': 14400000, '1d': 86400000,
-      '1w': 604800000, '1M': 2592000000
-    };
-    const candleSize = intervalMs[timeframe] || 86400000;
-    
-    const candles = [];
-    const prices = data.prices;
-    let i = 0;
-    
-    while (i < prices.length) {
-      const candleStart = prices[i][0];
-      const candleEnd = candleStart + candleSize;
-      const inCandle = [];
-      
-      while (i < prices.length && prices[i][0] < candleEnd) {
-        inCandle.push(prices[i]);
-        i++;
-      }
-      
-      if (inCandle.length > 0) {
-        candles.push({
-          time: candleStart,
-          open: inCandle[0][1],
-          high: Math.max(...inCandle.map(p => p[1])),
-          low: Math.min(...inCandle.map(p => p[1])),
-          close: inCandle[inCandle.length - 1][1],
-          volume: 0
-        });
-      }
-    }
-    
-    console.log(`✅ CoinGecko Chart: ${candles.length} candles for ${cryptoId}`);
+    console.log(`   Latest price: $${candles[candles.length-1].close}`);
     return candles;
   } catch (e) {
     clearTimeout(timeout);
@@ -341,7 +218,6 @@ async function fetchFromCoinGeckoChart(cryptoId, timeframe) {
 }
 
 // ✅ MAIN: Fetch with cascading fallbacks
-// Order: KuCoin (global) → Gate.io (global) → CoinGecko → Fallback simulation
 async function fetchCryptoData(cryptoId, timeframe) {
   const coinInfo = cryptoOptions.find(c => c.id === cryptoId);
   const coinName = coinInfo ? coinInfo.symbol : cryptoId;
@@ -367,13 +243,12 @@ async function fetchCryptoData(cryptoId, timeframe) {
     }
   }
   
-  // Ultimate fallback: simulated data
   console.warn('⚠️ All APIs failed. Using simulated data for demo.');
   state.dataSource = 'Demo';
   return generateFallbackData(cryptoId, timeframe);
 }
 
-// Generate realistic fallback data for demo/testing
+// Generate realistic fallback data
 function generateFallbackData(cryptoId, timeframe) {
   const bases = {
     bitcoin: 67000, ethereum: 3500, binancecoin: 580, ripple: 0.55,
@@ -383,7 +258,6 @@ function generateFallbackData(cryptoId, timeframe) {
   };
   const base = bases[cryptoId] || 100;
   
-  // Candle interval in ms based on timeframe
   const intervalMs = {
     '5m': 300000, '15m': 900000, '30m': 1800000,
     '1h': 3600000, '4h': 14400000, '1d': 86400000,
@@ -395,11 +269,10 @@ function generateFallbackData(cryptoId, timeframe) {
   const candles = [];
   let price = base;
   
-  // Generate a trend-biased random walk
-  const trendBias = (Math.random() - 0.5) * 0.002; // slight trend
+  const trendBias = (Math.random() - 0.5) * 0.002;
   
   for (let i = 0; i < numCandles; i++) {
-    const volatility = base * 0.008; // 0.8% per candle
+    const volatility = base * 0.008;
     const change = (Math.random() - 0.5 + trendBias) * volatility;
     
     const open = price;
@@ -412,13 +285,13 @@ function generateFallbackData(cryptoId, timeframe) {
     candles.push({
       time: Date.now() - (numCandles - i) * interval,
       open: Math.max(open, base * 0.01),
+      close: Math.max(close, base * 0.01),
       high: Math.max(high, base * 0.01),
       low: Math.max(low, base * 0.005),
-      close: Math.max(close, base * 0.01),
       volume: (Math.random() * 0.5 + 0.5) * 1e9
     });
     
-    price = Math.max(close, base * 0.1); // keep price positive
+    price = Math.max(close, base * 0.1);
   }
   return candles;
 }
@@ -429,58 +302,77 @@ function initTradingView(symbol, interval) {
   if (!container) return;
   container.innerHTML = '';
   
+  const tvSymbol = getTradingViewSymbol(symbol);
+  console.log(`🎬 Initializing TradingView: ${tvSymbol} ${interval}`);
+  
+  const widgetDiv = document.createElement('div');
+  widgetDiv.className = 'tradingview-widget-container__widget';
+  widgetDiv.style.width = '100%';
+  widgetDiv.style.height = '500px';
+  container.appendChild(widgetDiv);
+  
   const script = document.createElement('script');
+  script.type = 'text/javascript';
   script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
   script.async = true;
   script.innerHTML = JSON.stringify({
     "autosize": true,
-    "symbol": `${getTradingViewSymbol(symbol)}`,
+    "symbol": tvSymbol,
     "interval": interval,
     "timezone": "Etc/UTC",
     "theme": "dark",
     "style": "1",
     "locale": "en",
-    "toolbar_bg": "#1a1a2e",
-    "enable_publishing": false,
     "allow_symbol_change": true,
     "container_id": "tradingview-widget",
-    "studies": [
-      "RSI@tv-basicstudies",
-      "MACD@tv-basicstudies",
-      "BB@tv-basicstudies"
-    ],
-    "show_popup_button": true,
-    "popup_width": "1000",
-    "popup_height": "650"
+    "hide_top_toolbar": false,
+    "hide_legend": false,
+    "save_image": false,
+    "studies": ["RSI@tv-basicstudies", "MACD@tv-basicstudies"],
+    "support_host": "https://www.tradingview.com"
   });
   
-  const div = document.createElement('div');
-  div.className = 'tradingview-widget-container__widget';
-  div.style.height = '500px';
-  div.style.width = '100%';
-  container.appendChild(div);
   container.appendChild(script);
+  
+  script.onload = () => {
+    console.log(`✅ TradingView widget loaded successfully`);
+  };
+  
+  script.onerror = () => {
+    console.error('❌ TradingView widget failed to load');
+    container.innerHTML = `
+      <div style="display: flex; align-items: center; justify-content: center; height: 500px; background: var(--bg-secondary); border-radius: 8px;">
+        <div style="text-align: center; color: var(--text-muted);">
+          <p style="font-size: 1.2rem; margin-bottom: 1rem;">⚠️ TradingView blocked</p>
+          <p style="font-size: 0.9rem;">Please use Internal Chart or open in a new tab:</p>
+          <a href="https://www.tradingview.com/chart/?symbol=${tvSymbol}" target="_blank" style="display: inline-block; margin-top: 1rem; padding: 0.5rem 1.5rem; background: var(--accent-purple); color: white; text-decoration: none; border-radius: 6px;">
+            Open TradingView →
+          </a>
+        </div>
+      </div>
+    `;
+  };
 }
 
 function getTradingViewSymbol(coingeckoId) {
   const map = {
-    'bitcoin': 'BINANCE:BTCUSDT',
-    'ethereum': 'BINANCE:ETHUSDT',
-    'binancecoin': 'BINANCE:BNBUSDT',
-    'ripple': 'BINANCE:XRPUSDT',
-    'cardano': 'BINANCE:ADAUSDT',
-    'solana': 'BINANCE:SOLUSDT',
-    'dogecoin': 'BINANCE:DOGEUSDT',
-    'polkadot': 'BINANCE:DOTUSDT',
-    'avalanche-2': 'BINANCE:AVAXUSDT',
-    'chainlink': 'BINANCE:LINKUSDT',
-    'tron': 'BINANCE:TRXUSDT',
-    'litecoin': 'BINANCE:LTCUSDT',
-    'matic-network': 'BINANCE:MATICUSDT',
-    'uniswap': 'BINANCE:UNIUSDT',
-    'stellar': 'BINANCE:XLMUSDT'
+    'bitcoin': 'KUCOIN:BTCUSDT',
+    'ethereum': 'KUCOIN:ETHUSDT',
+    'binancecoin': 'KUCOIN:BNBUSDT',
+    'ripple': 'KUCOIN:XRPUSDT',
+    'cardano': 'KUCOIN:ADAUSDT',
+    'solana': 'KUCOIN:SOLUSDT',
+    'dogecoin': 'KUCOIN:DOGEUSDT',
+    'polkadot': 'KUCOIN:DOTUSDT',
+    'avalanche-2': 'KUCOIN:AVAXUSDT',
+    'chainlink': 'KUCOIN:LINKUSDT',
+    'tron': 'KUCOIN:TRXUSDT',
+    'litecoin': 'KUCOIN:LTCUSDT',
+    'matic-network': 'KUCOIN:MATICUSDT',
+    'uniswap': 'KUCOIN:UNIUSDT',
+    'stellar': 'KUCOIN:XLMUSDT'
   };
-  return map[coingeckoId] || `BINANCE:${coingeckoId.toUpperCase()}USDT`;
+  return map[coingeckoId] || `KUCOIN:${coingeckoId.toUpperCase()}USDT`;
 }
 
 function getTVInterval(timeframeId) {
@@ -496,7 +388,6 @@ async function runAnalysis() {
   const coinName = coinInfo ? coinInfo.symbol : state.crypto;
   
   try {
-    // Fetch data (with cascading fallbacks built in)
     const candles = await fetchCryptoData(state.crypto, state.timeframe);
     state.candleData = candles;
     
@@ -509,14 +400,11 @@ async function runAnalysis() {
       return;
     }
     
-    // Run technical analysis
     const result = analysis.analyzeAll(candles);
     
-    // Fetch fear & greed
     const fgi = await fetchFearGreedIndex();
     state.fearGreedData = fgi;
     
-    // Adjust signal with fear & greed
     if (fgi.value < 25 && result.signal === 'long') {
       result.probability = Math.min(result.probability + 5, 95);
     } else if (fgi.value > 75 && result.signal === 'short') {
@@ -526,10 +414,8 @@ async function runAnalysis() {
     state.lastAnalysis = result;
     renderResults(result);
     
-    // Check notifications
     checkNotification(result);
     
-    // Save last signal
     state.lastSignal = result.signal;
     
   } catch (error) {
@@ -560,37 +446,31 @@ function renderInternalChart(result) {
   if (!candles || candles.length === 0) return;
   
   const indicators = {};
-  
-  // Calculate EMAs for chart display
   const closes = candles.map(c => c.close);
+  
   const ema9 = analysis.calculateEMA(closes, 9);
   const ema21 = analysis.calculateEMA(closes, 21);
   
   indicators.ema9 = ema9;
   indicators.ema21 = ema21;
   
-  // Calculate Bollinger Bands
-  const bb = analysis.calculateBollingerBands(closes);
-  if (bb && bb.upper) {
-    // We need the full BB arrays, recalculate
-    const period = 20;
-    const bbUpper = [];
-    const bbMiddle = [];
-    const bbLower = [];
+  const period = 20;
+  const bbUpper = [];
+  const bbMiddle = [];
+  const bbLower = [];
+  
+  for (let i = period - 1; i < closes.length; i++) {
+    const slice = closes.slice(i - period + 1, i + 1);
+    const sma = slice.reduce((a, b) => a + b) / period;
+    const variance = slice.reduce((a, b) => a + Math.pow(b - sma, 2), 0) / period;
+    const std = Math.sqrt(variance);
     
-    for (let i = period - 1; i < closes.length; i++) {
-      const slice = closes.slice(i - period + 1, i + 1);
-      const sma = slice.reduce((a, b) => a + b) / period;
-      const variance = slice.reduce((a, b) => a + Math.pow(b - sma, 2), 0) / period;
-      const std = Math.sqrt(variance);
-      
-      bbUpper.push(sma + 2 * std);
-      bbMiddle.push(sma);
-      bbLower.push(sma - 2 * std);
-    }
-    
-    indicators.bb = { upper: bbUpper, middle: bbMiddle, lower: bbLower };
+    bbUpper.push(sma + 2 * std);
+    bbMiddle.push(sma);
+    bbLower.push(sma - 2 * std);
   }
+  
+  indicators.bb = { upper: bbUpper, middle: bbMiddle, lower: bbLower };
   
   priceChart.setData(candles, indicators);
 }
@@ -610,7 +490,6 @@ function switchChart(type) {
     internalContainer.style.display = 'block';
     tvContainer.style.display = 'none';
     
-    // Render internal chart with current data
     if (state.lastAnalysis) {
       renderInternalChart(state.lastAnalysis);
     }
@@ -620,12 +499,10 @@ function switchChart(type) {
     tvContainer.style.display = 'block';
     internalContainer.style.display = 'none';
     
-    // Initialize TradingView
     initTradingView(state.crypto, getTVInterval(state.timeframe));
   }
 }
 
-// Make switchChart available globally
 window.switchChart = switchChart;
 
 function renderSignalCard(result) {
@@ -931,22 +808,18 @@ function renderProbabilityChart(result) {
   `;
 }
 
-// Notifications
 function checkNotification(result) {
   const settings = state.notifSettings;
   if (!settings.enabled || !('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
   
-  // Check probability threshold
   if (result.probability < settings.minProbability) return;
   if (result.signal === 'wait') return;
   
-  // Check frequency
   if (settings.frequency === 'signal_change' && result.signal === state.lastSignal) return;
   
   const coinInfo = cryptoOptions.find(c => c.id === state.crypto);
   const signalText = result.signal === 'long' ? '🟢 LONG' : '🔴 SHORT';
-  const timeAgo = new Date().toLocaleTimeString();
   
   const notif = new Notification(`${signalText} | ${coinInfo?.symbol || 'CRYPTO'} @ $${formatPrice(result.currentPrice)}`, {
     body: `${t('probability')}: ${result.probability}% | ${t('leverage')}: ${result.leverage} | SL: $${formatPrice(result.sl)}`,
@@ -961,7 +834,6 @@ function checkNotification(result) {
     notif.close();
   };
   
-  // Save notification
   const notifRecord = {
     time: new Date().toISOString(),
     crypto: state.crypto,
@@ -1020,7 +892,6 @@ function renderNotifications() {
   }).join('');
 }
 
-// Render notification settings
 function renderNotifSettings() {
   const settings = state.notifSettings;
   
@@ -1032,12 +903,10 @@ function renderNotifSettings() {
   if (threshold) threshold.value = settings.minProbability;
   if (frequency) frequency.value = settings.frequency;
   
-  // Threshold display
   const thresholdDisplay = document.getElementById('threshold-display');
   if (thresholdDisplay) thresholdDisplay.textContent = `${settings.minProbability}%`;
 }
 
-// Utility functions
 function formatPrice(price) {
   if (!price || price === 0) return '0';
   if (price >= 1000) return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1096,7 +965,6 @@ function refreshUI() {
   renderNotifSettings();
 }
 
-// Auto refresh
 function startAutoRefresh() {
   stopAutoRefresh();
   state.refreshTimer = setInterval(() => {
@@ -1111,11 +979,9 @@ function stopAutoRefresh() {
   }
 }
 
-// Initialize the app
 async function initApp() {
   setLanguage(state.language);
   
-  // Populate crypto select
   const cryptoSelect = document.getElementById('crypto-select');
   if (cryptoSelect) {
     cryptoSelect.innerHTML = cryptoOptions.map(c => 
@@ -1123,7 +989,6 @@ async function initApp() {
     ).join('');
   }
   
-  // Populate timeframe select
   const tfSelect = document.getElementById('timeframe-select');
   if (tfSelect) {
     tfSelect.innerHTML = timeframeOptions.map(tf => 
@@ -1131,12 +996,10 @@ async function initApp() {
     ).join('');
   }
   
-  // Event listeners
   cryptoSelect?.addEventListener('change', (e) => {
     state.crypto = e.target.value;
     localStorage.setItem('cryptoCoin', state.crypto);
     
-    // Only update TradingView if it's the active chart
     if (currentChartType === 'tradingview') {
       initTradingView(state.crypto, getTVInterval(state.timeframe));
     }
@@ -1147,7 +1010,6 @@ async function initApp() {
     state.timeframe = e.target.value;
     localStorage.setItem('cryptoTimeframe', state.timeframe);
     
-    // Only update TradingView if it's the active chart
     if (currentChartType === 'tradingview') {
       initTradingView(state.crypto, getTVInterval(state.timeframe));
     }
@@ -1156,7 +1018,6 @@ async function initApp() {
   
   document.getElementById('analyze-btn')?.addEventListener('click', () => runAnalysis());
   
-  // Auto refresh controls
   const autoRefreshToggle = document.getElementById('auto-refresh-toggle');
   autoRefreshToggle?.addEventListener('change', (e) => {
     state.autoRefresh = e.target.checked;
@@ -1170,7 +1031,6 @@ async function initApp() {
     if (state.autoRefresh) startAutoRefresh();
   });
   
-  // Notification settings
   const notifToggle = document.getElementById('notif-toggle');
   notifToggle?.addEventListener('change', async (e) => {
     state.notifSettings.enabled = e.target.checked;
@@ -1181,7 +1041,6 @@ async function initApp() {
         state.notifSettings.enabled = false;
         e.target.checked = false;
       }
-      // Register service worker for background notifications
       registerServiceWorker();
     }
     
@@ -1201,33 +1060,26 @@ async function initApp() {
     localStorage.setItem('cryptoNotifSettings', JSON.stringify(state.notifSettings));
   });
   
-  // Restore saved state
   state.crypto = localStorage.getItem('cryptoCoin') || 'bitcoin';
   state.timeframe = localStorage.getItem('cryptoTimeframe') || '1d';
   if (cryptoSelect) cryptoSelect.value = state.crypto;
   if (tfSelect) tfSelect.value = state.timeframe;
   
-  // Initialize internal chart
   priceChart = new CandlestickChart('price-chart');
   
-  // Render notification settings
   renderNotifSettings();
   
-  // Run initial analysis
   await runAnalysis();
 }
 
-// Service Worker Registration
 async function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
     try {
       const registration = await navigator.serviceWorker.register('sw.js');
       console.log('Service Worker registered:', registration.scope);
       
-      // Subscribe to push notifications
       const subscription = await registration.pushManager.getSubscription();
       if (!subscription) {
-        // For local notifications, we just need the SW registered
         console.log('Service Worker ready for notifications');
       }
     } catch (error) {
@@ -1236,7 +1088,6 @@ async function registerServiceWorker() {
   }
 }
 
-// PWA Install Prompt
 let deferredPrompt;
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
@@ -1261,7 +1112,6 @@ window.addEventListener('appinstalled', () => {
   document.getElementById('install-btn').style.display = 'none';
 });
 
-// Online/Offline events
 window.addEventListener('online', () => {
   showStatus(t('online'), 'success');
 });
@@ -1270,15 +1120,12 @@ window.addEventListener('offline', () => {
   showStatus(t('offline'), 'error');
 });
 
-// Make refreshUI available globally for i18n toggle
 window._refreshUI = refreshUI;
 
-// Make language toggle available from onclick
 window.toggleLanguage = () => {
   const newLang = currentLang === 'fa' ? 'en' : 'fa';
   setLanguage(newLang);
   refreshUI();
 };
 
-// Export
 export { initApp, state, runAnalysis, refreshUI };
