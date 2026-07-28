@@ -61,9 +61,29 @@ const timeframeOptions = [
 ];
 
 // ============================================
-// Multiple Data Sources
+// Multiple Data Sources (Binance Vision = Priority 1)
 // ============================================
 
+function getBinanceVisionSymbol(coingeckoId) {
+  const map = {
+    'bitcoin': 'BTCUSDT', 'ethereum': 'ETHUSDT', 'binancecoin': 'BNBUSDT',
+    'ripple': 'XRPUSDT', 'cardano': 'ADAUSDT', 'solana': 'SOLUSDT',
+    'dogecoin': 'DOGEUSDT', 'polkadot': 'DOTUSDT', 'avalanche-2': 'AVAXUSDT',
+    'chainlink': 'LINKUSDT', 'tron': 'TRXUSDT', 'litecoin': 'LTCUSDT',
+    'matic-network': 'MATICUSDT', 'uniswap': 'UNIUSDT', 'stellar': 'XLMUSDT'
+  };
+  return map[coingeckoId] || (coingeckoId.toUpperCase() + 'USDT');
+}
+
+function getBinanceVisionInterval(timeframe) {
+  const map = {
+    '5m': '5m', '15m': '15m', '30m': '30m',
+    '1h': '1h', '4h': '4h', '1d': '1d', '1w': '1w', '1M': '1M'
+  };
+  return map[timeframe] || '1d';
+}
+
+// Helper functions for KuCoin
 function getKucoinSymbol(coingeckoId) {
   const map = {
     'bitcoin': 'BTC-USDT', 'ethereum': 'ETH-USDT', 'binancecoin': 'BNB-USDT',
@@ -77,24 +97,65 @@ function getKucoinSymbol(coingeckoId) {
 
 function getTimeframeParams(timeframe) {
   const map = {
-    '5m':  { type: 'min', value: 5,  kucoinType: '5min',  candles: 200 },
-    '15m': { type: 'min', value: 15, kucoinType: '15min', candles: 200 },
-    '30m': { type: 'min', value: 30, kucoinType: '30min', candles: 200 },
-    '1h':  { type: 'hour', value: 1, kucoinType: '1hour', candles: 200 },
-    '4h':  { type: 'hour', value: 4, kucoinType: '4hour', candles: 200 },
-    '1d':  { type: 'day', value: 1,  kucoinType: '1day',  candles: 200 },
-    '1w':  { type: 'week', value: 1, kucoinType: '1week', candles: 100 },
-    '1M':  { type: 'month', value: 1, kucoinType: '1month', candles: 60 }
+    '5m':  { kucoinType: '5min',  candles: 200 },
+    '15m': { kucoinType: '15min', candles: 200 },
+    '30m': { kucoinType: '30min', candles: 200 },
+    '1h':  { kucoinType: '1hour', candles: 200 },
+    '4h':  { kucoinType: '4hour', candles: 200 },
+    '1d':  { kucoinType: '1day',  candles: 200 },
+    '1w':  { kucoinType: '1week', candles: 100 },
+    '1M':  { kucoinType: '1month', candles: 60 }
   };
-  return map[timeframe] || { type: 'day', value: 1, kucoinType: '1day', candles: 200 };
+  return map[timeframe] || { kucoinType: '1day', candles: 200 };
 }
 
-// ✅ Source 1: KuCoin API
+// ✅ Source 1: Binance Vision API (CORS enabled, works globally)
+async function fetchFromBinanceVision(cryptoId, timeframe) {
+  const symbol = getBinanceVisionSymbol(cryptoId);
+  const interval = getBinanceVisionInterval(timeframe);
+  const limit = 200;
+  
+  const url = `https://data-api.binance.vision/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+  
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    
+    if (!response.ok) throw new Error(`Binance Vision HTTP ${response.status}`);
+    const data = await response.json();
+    
+    if (!Array.isArray(data) || data.length === 0) throw new Error('Empty Binance Vision response');
+    
+    // Binance kline format: [openTime, open, high, low, close, volume, closeTime, ...]
+    const candles = data.map(k => ({
+      time: parseInt(k[0]),
+      open: parseFloat(k[1]),
+      high: parseFloat(k[2]),
+      low: parseFloat(k[3]),
+      close: parseFloat(k[4]),
+      volume: parseFloat(k[5])
+    }));
+    
+    const latestPrice = candles[candles.length - 1].close;
+    console.log(`✅ Binance Vision: ${candles.length} candles for ${symbol}`);
+    console.log(`   Latest price: $${latestPrice}`);
+    
+    return candles;
+  } catch (e) {
+    clearTimeout(timeout);
+    console.error(`❌ Binance Vision error:`, e);
+    throw e;
+  }
+}
+
+// ✅ Source 2: KuCoin API
 async function fetchFromKucoin(cryptoId, timeframe) {
   const symbol = getKucoinSymbol(cryptoId);
   const params = getTimeframeParams(timeframe);
   
-  // Use simple limit-based request (more reliable)
   const url = `https://api.kucoin.com/api/v1/market/candles?type=${params.kucoinType}&symbol=${symbol}&limit=${params.candles}`;
   
   const controller = new AbortController();
@@ -110,14 +171,13 @@ async function fetchFromKucoin(cryptoId, timeframe) {
     if (!data.data || data.data.length === 0) throw new Error('Empty KuCoin response');
     
     // KuCoin format: [time, open, close, high, low, amount, volume]
-    // Returns newest first, sort oldest first
     const candles = data.data.map(k => ({
       time: parseInt(k[0]) * 1000,
       open: parseFloat(k[1]),
       close: parseFloat(k[2]),
       high: parseFloat(k[3]),
       low: parseFloat(k[4]),
-      volume: parseFloat(k[6]) // Use index 6 for actual volume
+      volume: parseFloat(k[6])
     })).sort((a, b) => a.time - b.time);
     
     const latestPrice = candles[candles.length - 1].close;
@@ -132,7 +192,7 @@ async function fetchFromKucoin(cryptoId, timeframe) {
   }
 }
 
-// ✅ Source 2: Gate.io API
+// ✅ Source 3: Gate.io API
 async function fetchFromGateio(cryptoId, timeframe) {
   const symbolMap = {
     'bitcoin': 'BTC_USDT', 'ethereum': 'ETH_USDT', 'binancecoin': 'BNB_USDT',
@@ -184,44 +244,8 @@ async function fetchFromGateio(cryptoId, timeframe) {
   }
 }
 
-// ✅ Source 3: CoinGecko
-async function fetchFromCoinGecko(cryptoId, timeframe) {
-  const map = { '5m': 2, '15m': 5, '30m': 10, '1h': 20, '4h': 60, '1d': 365, '1w': 730, '1M': 1000 };
-  const d = map[timeframe] || 365;
-  
-  const url = `https://api.coingecko.com/api/v3/coins/${cryptoId}/ohlc?vs_currency=usd&days=${d}`;
-  
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
-  
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
-    
-    if (!response.ok) throw new Error(`CoinGecko HTTP ${response.status}`);
-    const data = await response.json();
-    
-    if (!Array.isArray(data) || data.length === 0) throw new Error('Empty CoinGecko response');
-    
-    const candles = data.map(item => ({
-      time: item[0],
-      open: item[1],
-      close: item[4],
-      high: item[2],
-      low: item[3],
-      volume: 0
-    }));
-    
-    console.log(`✅ CoinGecko: ${candles.length} candles for ${cryptoId}`);
-    console.log(`   Latest price: $${candles[candles.length-1].close}`);
-    return candles;
-  } catch (e) {
-    clearTimeout(timeout);
-    throw e;
-  }
-}
-
 // ✅ MAIN: Fetch with caching and cascading fallbacks
+// Priority: Binance Vision → KuCoin → Gate.io → Demo
 async function fetchCryptoData(cryptoId, timeframe) {
   // Use cache if data is less than 30 seconds old
   const now = Date.now();
@@ -237,12 +261,10 @@ async function fetchCryptoData(cryptoId, timeframe) {
   const coinName = coinInfo ? coinInfo.symbol : cryptoId;
   
   const sources = [
+    { name: 'Binance Vision', fn: () => fetchFromBinanceVision(cryptoId, timeframe) },
     { name: 'KuCoin', fn: () => fetchFromKucoin(cryptoId, timeframe) },
-    { name: 'Gate.io', fn: () => fetchFromGateio(cryptoId, timeframe) },
-    { name: 'CoinGecko', fn: () => fetchFromCoinGecko(cryptoId, timeframe) }
+    { name: 'Gate.io', fn: () => fetchFromGateio(cryptoId, timeframe) }
   ];
-  
-  let allFailed = true;
   
   for (const source of sources) {
     try {
@@ -256,9 +278,7 @@ async function fetchCryptoData(cryptoId, timeframe) {
       
       if (data.length >= 30) {
         const latestPrice = data[data.length - 1].close;
-        console.log(`✅ Success: ${source.name} returned ${data.length} candles`);
-        console.log(`   Latest close price: $${latestPrice}`);
-        state.dataSource = source.name;
+        console.log(`✅ SUCCESS via ${source.name}: ${data.length} candles, price: $${latestPrice}`);
         
         // Cache successful data
         state.lastFetchTime = now;
@@ -269,14 +289,8 @@ async function fetchCryptoData(cryptoId, timeframe) {
           source: source.name
         };
         
-        allFailed = false;
-        
-        if (latestPrice > 0) {
-          return data;
-        } else {
-          console.warn(`⚠️ ${source.name}: invalid price $${latestPrice}`);
-          continue;
-        }
+        state.dataSource = source.name;
+        return data;
       } else {
         console.warn(`⚠️ ${source.name}: only ${data.length} candles (need 30+)`);
       }
@@ -285,14 +299,12 @@ async function fetchCryptoData(cryptoId, timeframe) {
     }
   }
   
-  // Only use demo data if ALL sources failed
-  if (allFailed) {
-    console.error('❌ All APIs failed. Using simulated data.');
-    state.dataSource = 'Demo (Not Real!)';
-    showStatus('⚠️ API failed - using demo data (prices not real!)', 'error');
-    state.lastFetchTime = now;
-    return generateFallbackData(cryptoId, timeframe);
-  }
+  // All failed - use demo data
+  console.error('❌ ALL APIs FAILED. Using simulated demo data.');
+  state.dataSource = '⚠️ Demo (Not Real!)';
+  showStatus('⚠️ API failed - using demo data (prices NOT real!)', 'error');
+  state.lastFetchTime = now;
+  return generateFallbackData(cryptoId, timeframe);
 }
 
 // Generate realistic fallback data
