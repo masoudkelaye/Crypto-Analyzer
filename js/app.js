@@ -21,7 +21,9 @@ const state = {
   fearGreedData: null,
   candleData: null,
   lastSignal: null,
-  dataSource: null
+  dataSource: null,
+  lastFetchTime: 0,
+  cachedData: null
 };
 
 const analysis = new TechnicalAnalysis();
@@ -92,14 +94,11 @@ async function fetchFromKucoin(cryptoId, timeframe) {
   const symbol = getKucoinSymbol(cryptoId);
   const params = getTimeframeParams(timeframe);
   
-  const now = Math.floor(Date.now() / 1000);
-  const durationSeconds = params.value * { min: 60, hour: 3600, day: 86400, week: 604800, month: 2592000 }[params.type] * params.candles;
-  const startAt = now - durationSeconds;
-  
-  const url = `https://api.kucoin.com/api/v1/market/candles?type=${params.kucoinType}&symbol=${symbol}&startAt=${startAt}&endAt=${now}`;
+  // Use simple limit-based request (more reliable)
+  const url = `https://api.kucoin.com/api/v1/market/candles?type=${params.kucoinType}&symbol=${symbol}&limit=${params.candles}`;
   
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const timeout = setTimeout(() => controller.abort(), 10000);
   
   try {
     const response = await fetch(url, { signal: controller.signal });
@@ -110,20 +109,25 @@ async function fetchFromKucoin(cryptoId, timeframe) {
     
     if (!data.data || data.data.length === 0) throw new Error('Empty KuCoin response');
     
+    // KuCoin format: [time, open, close, high, low, amount, volume]
+    // Returns newest first, sort oldest first
     const candles = data.data.map(k => ({
       time: parseInt(k[0]) * 1000,
       open: parseFloat(k[1]),
       close: parseFloat(k[2]),
       high: parseFloat(k[3]),
       low: parseFloat(k[4]),
-      volume: parseFloat(k[5])
+      volume: parseFloat(k[6]) // Use index 6 for actual volume
     })).sort((a, b) => a.time - b.time);
     
+    const latestPrice = candles[candles.length - 1].close;
     console.log(`✅ KuCoin: ${candles.length} candles for ${symbol}`);
-    console.log(`   Latest price: $${candles[candles.length-1].close}`);
+    console.log(`   Latest price: $${latestPrice}`);
+    
     return candles;
   } catch (e) {
     clearTimeout(timeout);
+    console.error(`❌ KuCoin error:`, e);
     throw e;
   }
 }
@@ -217,8 +221,18 @@ async function fetchFromCoinGecko(cryptoId, timeframe) {
   }
 }
 
-// ✅ MAIN: Fetch with cascading fallbacks
+// ✅ MAIN: Fetch with caching and cascading fallbacks
 async function fetchCryptoData(cryptoId, timeframe) {
+  // Use cache if data is less than 30 seconds old
+  const now = Date.now();
+  if (state.cachedData && state.cachedData.crypto === cryptoId && 
+      state.cachedData.timeframe === timeframe && 
+      (now - state.lastFetchTime) < 30000) {
+    console.log(`📦 Using cached data (${Math.round((now - state.lastFetchTime) / 1000)}s old)`);
+    state.dataSource = state.cachedData.source;
+    return state.cachedData.candles;
+  }
+
   const coinInfo = cryptoOptions.find(c => c.id === cryptoId);
   const coinName = coinInfo ? coinInfo.symbol : cryptoId;
   
@@ -228,24 +242,57 @@ async function fetchCryptoData(cryptoId, timeframe) {
     { name: 'CoinGecko', fn: () => fetchFromCoinGecko(cryptoId, timeframe) }
   ];
   
+  let allFailed = true;
+  
   for (const source of sources) {
     try {
       console.log(`📡 Trying ${source.name} for ${coinName}...`);
       const data = await source.fn();
-      if (data && data.length >= 30) {
-        console.log(`✅ Success: ${source.name} returned ${data.length} candles`);
-        state.dataSource = source.name;
-        return data;
+      
+      if (!data || data.length === 0) {
+        console.warn(`⚠️ ${source.name}: returned empty data`);
+        continue;
       }
-      console.warn(`⚠️ ${source.name}: only ${data?.length || 0} candles (need 30+)`);
+      
+      if (data.length >= 30) {
+        const latestPrice = data[data.length - 1].close;
+        console.log(`✅ Success: ${source.name} returned ${data.length} candles`);
+        console.log(`   Latest close price: $${latestPrice}`);
+        state.dataSource = source.name;
+        
+        // Cache successful data
+        state.lastFetchTime = now;
+        state.cachedData = {
+          crypto: cryptoId,
+          timeframe: timeframe,
+          candles: data,
+          source: source.name
+        };
+        
+        allFailed = false;
+        
+        if (latestPrice > 0) {
+          return data;
+        } else {
+          console.warn(`⚠️ ${source.name}: invalid price $${latestPrice}`);
+          continue;
+        }
+      } else {
+        console.warn(`⚠️ ${source.name}: only ${data.length} candles (need 30+)`);
+      }
     } catch (e) {
       console.warn(`❌ ${source.name} failed: ${e.message}`);
     }
   }
   
-  console.warn('⚠️ All APIs failed. Using simulated data for demo.');
-  state.dataSource = 'Demo';
-  return generateFallbackData(cryptoId, timeframe);
+  // Only use demo data if ALL sources failed
+  if (allFailed) {
+    console.error('❌ All APIs failed. Using simulated data.');
+    state.dataSource = 'Demo (Not Real!)';
+    showStatus('⚠️ API failed - using demo data (prices not real!)', 'error');
+    state.lastFetchTime = now;
+    return generateFallbackData(cryptoId, timeframe);
+  }
 }
 
 // Generate realistic fallback data
@@ -296,7 +343,7 @@ function generateFallbackData(cryptoId, timeframe) {
   return candles;
 }
 
-// Initialize TradingView Widget
+// Initialize TradingView Widget using iframe (most reliable method)
 function initTradingView(symbol, interval) {
   const container = document.getElementById('tradingview-widget');
   if (!container) return;
@@ -305,48 +352,32 @@ function initTradingView(symbol, interval) {
   const tvSymbol = getTradingViewSymbol(symbol);
   console.log(`🎬 Initializing TradingView: ${tvSymbol} ${interval}`);
   
-  const widgetDiv = document.createElement('div');
-  widgetDiv.className = 'tradingview-widget-container__widget';
-  widgetDiv.style.width = '100%';
-  widgetDiv.style.height = '500px';
-  container.appendChild(widgetDiv);
+  // Use TradingView widget iframe (most reliable)
+  const widgetUrl = `https://www.tradingview.com/embed-widget/advanced-chart/?locale=en#{"symbol":"${tvSymbol}","interval":"${interval}","timezone":"Etc%2FUTC","theme":"dark","style":"1","hide_top_toolbar":false,"hide_legend":false,"allow_symbol_change":true,"studies":["RSI@tv-basicstudies","MACD@tv-basicstudies"]}`;
   
-  const script = document.createElement('script');
-  script.type = 'text/javascript';
-  script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
-  script.async = true;
-  script.innerHTML = JSON.stringify({
-    "autosize": true,
-    "symbol": tvSymbol,
-    "interval": interval,
-    "timezone": "Etc/UTC",
-    "theme": "dark",
-    "style": "1",
-    "locale": "en",
-    "allow_symbol_change": true,
-    "container_id": "tradingview-widget",
-    "hide_top_toolbar": false,
-    "hide_legend": false,
-    "save_image": false,
-    "studies": ["RSI@tv-basicstudies", "MACD@tv-basicstudies"],
-    "support_host": "https://www.tradingview.com"
-  });
+  const iframe = document.createElement('iframe');
+  iframe.src = widgetUrl;
+  iframe.style.width = '100%';
+  iframe.style.height = '500px';
+  iframe.style.border = 'none';
+  iframe.style.borderRadius = '8px';
+  iframe.allowFullscreen = true;
   
-  container.appendChild(script);
+  container.appendChild(iframe);
   
-  script.onload = () => {
+  iframe.onload = () => {
     console.log(`✅ TradingView widget loaded successfully`);
   };
   
-  script.onerror = () => {
+  iframe.onerror = () => {
     console.error('❌ TradingView widget failed to load');
     container.innerHTML = `
       <div style="display: flex; align-items: center; justify-content: center; height: 500px; background: var(--bg-secondary); border-radius: 8px;">
         <div style="text-align: center; color: var(--text-muted);">
-          <p style="font-size: 1.2rem; margin-bottom: 1rem;">⚠️ TradingView blocked</p>
-          <p style="font-size: 0.9rem;">Please use Internal Chart or open in a new tab:</p>
+          <p style="font-size: 1.2rem; margin-bottom: 1rem;">⚠️ TradingView blocked or failed to load</p>
+          <p style="font-size: 0.9rem;">Open directly in TradingView:</p>
           <a href="https://www.tradingview.com/chart/?symbol=${tvSymbol}" target="_blank" style="display: inline-block; margin-top: 1rem; padding: 0.5rem 1.5rem; background: var(--accent-purple); color: white; text-decoration: none; border-radius: 6px;">
-            Open TradingView →
+            Open ${tvSymbol} on TradingView →
           </a>
         </div>
       </div>
@@ -387,9 +418,13 @@ async function runAnalysis() {
   const coinInfo = cryptoOptions.find(c => c.id === state.crypto);
   const coinName = coinInfo ? coinInfo.symbol : state.crypto;
   
+  console.log(`\n${'='.repeat(60)}`);
+  console.log(`🔍 Starting analysis for ${coinName} (${state.timeframe})`);
+  console.log(`${'='.repeat(60)}`);
+  
   try {
+    console.log(`📊 Fetching data...`);
     const candles = await fetchCryptoData(state.crypto, state.timeframe);
-    state.candleData = candles;
     
     if (!candles || candles.length < 30) {
       const msg = currentLang === 'fa'
@@ -400,7 +435,35 @@ async function runAnalysis() {
       return;
     }
     
+    // Verify and log actual price
+    const latestCandle = candles[candles.length - 1];
+    const actualPrice = latestCandle.close;
+    console.log(`💰 Latest candle data:`);
+    console.log(`   Time: ${new Date(latestCandle.time).toISOString()}`);
+    console.log(`   Open: $${latestCandle.open}`);
+    console.log(`   High: $${latestCandle.high}`);
+    console.log(`   Low: $${latestCandle.low}`);
+    console.log(`   Close: $${latestCandle.close}`);
+    console.log(`   Source: ${state.dataSource}`);
+    
+    state.candleData = candles;
+    
+    console.log(`\n🧮 Running technical analysis...`);
     const result = analysis.analyzeAll(candles);
+    
+    console.log(`\n📈 Analysis result:`);
+    console.log(`   Signal: ${result.signal}`);
+    console.log(`   Entry price: $${result.entry}`);
+    console.log(`   Current price from analysis: $${result.currentPrice}`);
+    console.log(`   Probability: ${result.probability}%`);
+    
+    // Verify entry price matches actual data
+    if (Math.abs(result.entry - actualPrice) > actualPrice * 0.01) {
+      console.warn(`⚠️ Price mismatch detected!`);
+      console.warn(`   Entry: $${result.entry}`);
+      console.warn(`   Actual: $${actualPrice}`);
+      console.warn(`   Difference: ${((result.entry - actualPrice) / actualPrice * 100).toFixed(2)}%`);
+    }
     
     const fgi = await fetchFearGreedIndex();
     state.fearGreedData = fgi;
@@ -418,8 +481,10 @@ async function runAnalysis() {
     
     state.lastSignal = result.signal;
     
+    console.log(`✅ Analysis complete!\n`);
+    
   } catch (error) {
-    console.error('Analysis error:', error);
+    console.error('❌ Analysis error:', error);
     showStatus('Error during analysis: ' + error.message, 'error');
   }
   
