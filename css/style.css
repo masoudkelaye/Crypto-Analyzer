@@ -374,6 +374,19 @@ body[dir="rtl"] {
 .signal-item .value.leverage { color: var(--accent-purple); }
 
 /* ============================================
+   Advanced Indicators Cards
+   ============================================ */
+.advanced-card {
+  border-left: 3px solid var(--accent-purple);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.05), transparent);
+}
+
+.highlight-card {
+  border-left: 4px solid var(--accent-green);
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.08), transparent);
+}
+
+/* ============================================
    Chart Tabs
    ============================================ */
 .chart-tab {
