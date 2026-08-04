@@ -1,6 +1,6 @@
 // Main Application Module
 import { TechnicalAnalysis, fetchFearGreedIndex, fetchOrderBook, fetchFundingRate, analyzeMultiTimeframe } from './analysis.js';
-import { t, setLanguage, applyTranslations, currentLang } from './i18n.js';
+import { t, setLanguage, applyTranslations } from './i18n.js';
 import { CandlestickChart } from './chart.js';
 import { fetchCryptoNews, analyzeNewsSentiment } from './news.js';
 
@@ -441,7 +441,7 @@ async function runAnalysis() {
     const candles = await fetchCryptoData(state.crypto, state.timeframe);
     
     if (!candles || candles.length < 30) {
-      const msg = currentLang === 'fa'
+      const msg = window.currentLang === 'fa'
         ? `⚠️ داده‌ای برای ${coinName} در این تایم‌فریم موجود نیست.`
         : `⚠️ No data available for ${coinName} on this timeframe.`;
       showStatus(msg, 'error');
@@ -1042,7 +1042,7 @@ function renderNews() {
   `;
   
   news.headlines.slice(0, 5).forEach(headline => {
-    const time = new Date(headline.publishedAt).toLocaleString(currentLang === 'fa' ? 'fa-IR' : 'en-US', { 
+    const time = new Date(headline.publishedAt).toLocaleString(window.currentLang === 'fa' ? 'fa-IR' : 'en-US', { 
       hour: '2-digit', 
       minute: '2-digit' 
     });
@@ -1228,7 +1228,7 @@ function renderNotifications() {
     const coinInfo = cryptoOptions.find(c => c.id === n.crypto);
     const signalClass = n.signal === 'long' ? 'long' : 'short';
     const signalText = n.signal === 'long' ? '🟢 LONG' : '🔴 SHORT';
-    const time = new Date(n.time).toLocaleString(currentLang === 'fa' ? 'fa-IR' : 'en-US');
+    const time = new Date(n.time).toLocaleString(window.currentLang === 'fa' ? 'fa-IR' : 'en-US');
     
     return `
       <div class="notif-item ${signalClass}">
@@ -1309,9 +1309,9 @@ function showStatus(msg, type = 'info') {
 function updateLastUpdateTime() {
   const el = document.getElementById('last-update');
   if (el) {
-    const time = new Date().toLocaleString(currentLang === 'fa' ? 'fa-IR' : 'en-US');
+    const time = new Date().toLocaleString(window.currentLang === 'fa' ? 'fa-IR' : 'en-US');
     const source = state.dataSource || 'API';
-    const sourceLabel = currentLang === 'fa' ? 'منبع داده' : 'Data source';
+    const sourceLabel = window.currentLang === 'fa' ? 'منبع داده' : 'Data source';
     el.textContent = `${t('lastUpdate')}: ${time} | ${sourceLabel}: ${source}`;
   }
 }
@@ -1339,20 +1339,30 @@ function stopAutoRefresh() {
 }
 
 async function initApp() {
+  console.log('🚀 Initializing app...');
+  console.log('🌐 Language:', window.currentLang);
   setLanguage(state.language);
   
   const cryptoSelect = document.getElementById('crypto-select');
   if (cryptoSelect) {
+    console.log('✅ Found crypto-select element');
     cryptoSelect.innerHTML = cryptoOptions.map(c => 
       `<option value="${c.id}" ${c.id === state.crypto ? 'selected' : ''}>${c.symbol} - ${c.name}</option>`
     ).join('');
+    console.log(`✅ Populated ${cryptoOptions.length} cryptocurrencies`);
+  } else {
+    console.error('❌ crypto-select element not found!');
   }
   
   const tfSelect = document.getElementById('timeframe-select');
   if (tfSelect) {
+    console.log('✅ Found timeframe-select element');
     tfSelect.innerHTML = timeframeOptions.map(tf => 
       `<option value="${tf.id}" ${tf.id === state.timeframe ? 'selected' : ''}>${tf.label}</option>`
     ).join('');
+    console.log(`✅ Populated ${timeframeOptions.length} timeframes`);
+  } else {
+    console.error('❌ timeframe-select element not found!');
   }
   
   cryptoSelect?.addEventListener('change', (e) => {
@@ -1482,7 +1492,7 @@ window.addEventListener('offline', () => {
 window._refreshUI = refreshUI;
 
 window.toggleLanguage = () => {
-  const newLang = currentLang === 'fa' ? 'en' : 'fa';
+  const newLang = window.currentLang === 'fa' ? 'en' : 'fa';
   setLanguage(newLang);
   refreshUI();
 };

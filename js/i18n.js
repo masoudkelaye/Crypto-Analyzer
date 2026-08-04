@@ -227,12 +227,20 @@ const translations = {
 
 let currentLang = localStorage.getItem('cryptoLang') || 'fa';
 
+// Make currentLang accessible globally for other modules
+window.currentLang = currentLang;
+
+function getCurrentLang() {
+  return window.currentLang || currentLang;
+}
+
 function t(key) {
-  return translations[currentLang]?.[key] || translations['en'][key] || key;
+  return translations[getCurrentLang()]?.[key] || translations['en'][key] || key;
 }
 
 function setLanguage(lang) {
   currentLang = lang;
+  window.currentLang = lang;
   localStorage.setItem('cryptoLang', lang);
   document.documentElement.lang = lang;
   document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
@@ -266,6 +274,6 @@ function toggleLanguage() {
   }
 }
 
-export { t, setLanguage, toggleLanguage, applyTranslations, currentLang };
+export { t, setLanguage, toggleLanguage, applyTranslations, currentLang, getCurrentLang };
 // Allow setting language from outside
 window._setLanguage = setLanguage;
