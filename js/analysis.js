@@ -1123,4 +1123,4 @@ function getSymbol(cryptoId) {
   return map[cryptoId] || (cryptoId.toUpperCase() + 'USDT');
 }
 
-export { TechnicalAnalysis, fetchFearGreedIndex, fetchOrderBook, fetchFundingRate, analyzeMultiTimeframe, analyzeBTCInfluence };
+export { TechnicalAnalysis, fetchFearGreedIndex, fetchOrderBook, fetchFundingRate, analyzeMultiTimeframe };

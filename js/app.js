@@ -1,5 +1,5 @@
 // Main Application Module
-import { TechnicalAnalysis, fetchFearGreedIndex, fetchOrderBook, fetchFundingRate, analyzeMultiTimeframe, analyzeBTCInfluence } from './analysis.js';
+import { TechnicalAnalysis, fetchFearGreedIndex, fetchOrderBook, fetchFundingRate, analyzeMultiTimeframe } from './analysis.js';
 import { t, setLanguage, applyTranslations, currentLang } from './i18n.js';
 import { CandlestickChart } from './chart.js';
 import { fetchCryptoNews, analyzeNewsSentiment } from './news.js';
@@ -461,7 +461,7 @@ async function runAnalysis() {
       fetchOrderBook(symbol),
       fetchFundingRate(symbol),
       analyzeMultiTimeframe(state.crypto, state.timeframe),
-      analyzeBTCInfluence(state.crypto),
+      analysis.analyzeBTCInfluence(state.crypto),
       fetchCryptoNews(state.crypto, 10)
     ]);
     
