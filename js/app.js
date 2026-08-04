@@ -1,5 +1,5 @@
 // Main Application Module
-import { TechnicalAnalysis, fetchFearGreedIndex } from './analysis.js';
+import { TechnicalAnalysis, fetchFearGreedIndex, fetchOrderBook, fetchFundingRate, analyzeMultiTimeframe } from './analysis.js';
 import { t, setLanguage, applyTranslations, currentLang } from './i18n.js';
 import { CandlestickChart } from './chart.js';
 
@@ -431,51 +431,55 @@ async function runAnalysis() {
   const coinName = coinInfo ? coinInfo.symbol : state.crypto;
   
   console.log(`\n${'='.repeat(60)}`);
-  console.log(`🔍 Starting analysis for ${coinName} (${state.timeframe})`);
+  console.log(`🔍 Starting ADVANCED analysis for ${coinName} (${state.timeframe})`);
   console.log(`${'='.repeat(60)}`);
   
   try {
-    console.log(`📊 Fetching data...`);
+    console.log(`📊 Fetching price data...`);
     const candles = await fetchCryptoData(state.crypto, state.timeframe);
     
     if (!candles || candles.length < 30) {
       const msg = currentLang === 'fa'
-        ? `⚠️ داده‌ای برای ${coinName} در این تایم‌فریم موجود نیست. ارز یا تایم‌فریم دیگری انتخاب کنید.`
-        : `⚠️ No data available for ${coinName} on this timeframe. Try a different coin or timeframe.`;
+        ? `⚠️ داده‌ای برای ${coinName} در این تایم‌فریم موجود نیست.`
+        : `⚠️ No data available for ${coinName} on this timeframe.`;
       showStatus(msg, 'error');
       showLoading(false);
       return;
     }
     
-    // Verify and log actual price
     const latestCandle = candles[candles.length - 1];
-    const actualPrice = latestCandle.close;
-    console.log(`💰 Latest candle data:`);
-    console.log(`   Time: ${new Date(latestCandle.time).toISOString()}`);
-    console.log(`   Open: $${latestCandle.open}`);
-    console.log(`   High: $${latestCandle.high}`);
-    console.log(`   Low: $${latestCandle.low}`);
-    console.log(`   Close: $${latestCandle.close}`);
-    console.log(`   Source: ${state.dataSource}`);
-    
+    console.log(`💰 Latest price: $${latestCandle.close}`);
     state.candleData = candles;
     
-    console.log(`\n🧮 Running technical analysis...`);
-    const result = analysis.analyzeAll(candles);
+    // Fetch NEW data for advanced analysis
+    console.log(`\n📡 Fetching advanced data...`);
+    const symbol = getBinanceVisionSymbol(state.crypto);
+    
+    const [orderBook, fundingRate, multiTimeframe] = await Promise.allSettled([
+      fetchOrderBook(symbol),
+      fetchFundingRate(symbol),
+      analyzeMultiTimeframe(state.crypto, state.timeframe)
+    ]);
+    
+    const orderBookData = orderBook.status === 'fulfilled' ? orderBook.value : { bidAskRatio: 1, signal: 'neutral' };
+    const fundingData = fundingRate.status === 'fulfilled' ? fundingRate.value : { rate: 0, signal: 'neutral' };
+    const multiTFData = multiTimeframe.status === 'fulfilled' ? multiTimeframe.value : { signal: 'neutral', alignment: 50 };
+    
+    console.log(`\n🧮 Running ADVANCED technical analysis...`);
+    
+    const extraData = {
+      orderBook: orderBookData,
+      fundingRate: fundingData,
+      multiTimeframe: multiTFData
+    };
+    
+    const result = analysis.analyzeAll(candles, extraData);
     
     console.log(`\n📈 Analysis result:`);
     console.log(`   Signal: ${result.signal}`);
-    console.log(`   Entry price: $${result.entry}`);
-    console.log(`   Current price from analysis: $${result.currentPrice}`);
+    console.log(`   Entry: $${result.entry}`);
     console.log(`   Probability: ${result.probability}%`);
-    
-    // Verify entry price matches actual data
-    if (Math.abs(result.entry - actualPrice) > actualPrice * 0.01) {
-      console.warn(`⚠️ Price mismatch detected!`);
-      console.warn(`   Entry: $${result.entry}`);
-      console.warn(`   Actual: $${actualPrice}`);
-      console.warn(`   Difference: ${((result.entry - actualPrice) / actualPrice * 100).toFixed(2)}%`);
-    }
+    console.log(`   Total Score: ${result.totalScore}`);
     
     const fgi = await fetchFearGreedIndex();
     state.fearGreedData = fgi;
@@ -493,7 +497,11 @@ async function runAnalysis() {
     
     state.lastSignal = result.signal;
     
-    console.log(`✅ Analysis complete!\n`);
+    console.log(`✅ ADVANCED analysis complete!`);
+    console.log(`   Bullish Factors: ${result.bullishFactors.length}`);
+    console.log(`   Bearish Factors: ${result.bearishFactors.length}`);
+    console.log(`   Advanced Indicators: 5 extra parameters`);
+    console.log(`\n${'='.repeat(60)}\n`);
     
   } catch (error) {
     console.error('❌ Analysis error:', error);
@@ -502,6 +510,7 @@ async function runAnalysis() {
   
   showLoading(false);
 }
+
 
 // Render Results
 function renderResults(result) {
@@ -648,6 +657,9 @@ function renderSignalCard(result) {
 
 function renderIndicators(result) {
   const container = document.getElementById('indicators-panel');
+  const advancedSection = document.getElementById('advanced-section');
+  const advancedContainer = document.getElementById('advanced-indicators-panel');
+  
   if (!container) return;
   
   const ind = result.indicators;
@@ -756,6 +768,111 @@ function renderIndicators(result) {
       </div>
     </div>
   `;
+  
+  // NEW: Render Advanced Indicators
+  if (result.advancedIndicators && advancedContainer && advancedSection) {
+    advancedSection.style.display = 'block';
+    const adv = result.advancedIndicators;
+    
+    advancedContainer.innerHTML = `
+      <div class="indicator-card advanced-card">
+        <div class="indicator-header">
+          <h3>📊 Volume Profile</h3>
+          <span class="indicator-value ${adv.volumeProfile.signal === 'bullish' ? 'bullish' : adv.volumeProfile.signal === 'bearish' ? 'bearish' : ''}">
+            ${adv.volumeProfile.signal.toUpperCase()}
+          </span>
+        </div>
+        <div class="indicator-meta">
+          <span>POC: $${formatPrice(adv.volumeProfile.poc)}</span>
+          <span>VAH: $${formatPrice(adv.volumeProfile.vah)}</span>
+          <span>VAL: $${formatPrice(adv.volumeProfile.val)}</span>
+        </div>
+        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;">
+          Weight: <strong style="color: var(--accent-purple);">10</strong>
+        </div>
+      </div>
+      
+      <div class="indicator-card advanced-card">
+        <div class="indicator-header">
+          <h3>📈 ADX (Trend Strength)</h3>
+          <span class="indicator-value ${adv.adx.value > 25 ? 'bullish' : ''}">
+            ${adv.adx.value.toFixed(1)} (${adv.adx.trendStrength})
+          </span>
+        </div>
+        <div class="indicator-meta">
+          <span>+DI: ${adv.adx.plusDI?.toFixed(2) || 'N/A'}</span>
+          <span>-DI: ${adv.adx.minusDI?.toFixed(2) || 'N/A'}</span>
+        </div>
+        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;">
+          Weight: <strong style="color: var(--accent-purple);">10</strong>
+        </div>
+      </div>
+      
+      <div class="indicator-card advanced-card">
+        <div class="indicator-header">
+          <h3>🎯 Stochastic RSI</h3>
+          <span class="indicator-value ${adv.stochRSI.signal === 'oversold' ? 'bullish' : adv.stochRSI.signal === 'overbought' ? 'bearish' : ''}">
+            ${adv.stochRSI.signal.toUpperCase()}
+          </span>
+        </div>
+        <div class="indicator-meta">
+          <span>%K: ${adv.stochRSI.k.toFixed(2)}</span>
+          <span>%D: ${adv.stochRSI.d.toFixed(2)}</span>
+        </div>
+        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;">
+          Weight: <strong style="color: var(--accent-purple);">5</strong>
+        </div>
+      </div>
+      
+      <div class="indicator-card advanced-card highlight-card">
+        <div class="indicator-header">
+          <h3>📋 Order Book</h3>
+          <span class="indicator-value ${adv.orderBook.signal === 'bullish' ? 'bullish' : adv.orderBook.signal === 'bearish' ? 'bearish' : ''}">
+            ${adv.orderBook.signal.toUpperCase()}
+          </span>
+        </div>
+        <div class="indicator-meta">
+          <span>Bid/Ask: ${adv.orderBook.bidAskRatio?.toFixed(2) || 'N/A'}</span>
+          <span>Imbalance: ${adv.orderBook.imbalance?.toFixed(2) || '0'}%</span>
+        </div>
+        <div style="font-size: 0.75rem; color: var(--accent-green); margin-top: 0.5rem; font-weight: 600;">
+          ⭐ Weight: <strong style="color: var(--accent-purple);">20</strong> (Highest!)
+        </div>
+      </div>
+      
+      <div class="indicator-card advanced-card highlight-card">
+        <div class="indicator-header">
+          <h3>💰 Funding Rate</h3>
+          <span class="indicator-value ${adv.fundingRate.signal === 'bullish' ? 'bullish' : adv.fundingRate.signal === 'bearish' ? 'bearish' : ''}">
+            ${adv.fundingRate.signal.toUpperCase()}
+          </span>
+        </div>
+        <div class="indicator-meta">
+          <span>Rate: ${adv.fundingRate.rate?.toFixed(4) || '0'}%</span>
+          <span>${adv.fundingRate.rate < 0 ? 'Shorts pay' : adv.fundingRate.rate > 0 ? 'Longs pay' : 'Neutral'}</span>
+        </div>
+        <div style="font-size: 0.75rem; color: var(--accent-green); margin-top: 0.5rem; font-weight: 600;">
+          ⭐ Weight: <strong style="color: var(--accent-purple);">15</strong>
+        </div>
+      </div>
+      
+      <div class="indicator-card advanced-card highlight-card">
+        <div class="indicator-header">
+          <h3>🔄 Multi-Timeframe</h3>
+          <span class="indicator-value ${adv.multiTimeframe.signal === 'bullish' ? 'bullish' : adv.multiTimeframe.signal === 'bearish' ? 'bearish' : ''}">
+            ${adv.multiTimeframe.signal.toUpperCase()}
+          </span>
+        </div>
+        <div class="indicator-meta">
+          <span>Alignment: ${adv.multiTimeframe.alignment?.toFixed(0) || '50'}%</span>
+          <span>Higher TF: ${adv.multiTimeframe.details?.join(', ') || 'N/A'}</span>
+        </div>
+        <div style="font-size: 0.75rem; color: var(--accent-green); margin-top: 0.5rem; font-weight: 600;">
+          ⭐ Weight: <strong style="color: var(--accent-purple);">15</strong>
+        </div>
+      </div>
+    `;
+  }
 }
 
 function renderFearGreed(data) {

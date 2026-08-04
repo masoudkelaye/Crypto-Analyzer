@@ -37,6 +37,7 @@ const translations = {
     
     // Technical Indicators
     technicalAnalysis: "Technical Indicators",
+    advancedAnalysis: "Advanced Indicators (5 Extra Parameters)",
     rsi: "RSI (14)",
     macd: "MACD",
     ema: "EMA Crossover",
@@ -144,6 +145,7 @@ const translations = {
     
     // Technical Indicators
     technicalAnalysis: "اندیکاتورهای تکنیکال",
+    advancedAnalysis: "اندیکاتورهای پیشرفته (۵ پارامتر اضافی)",
     rsi: "RSI (14)",
     macd: "MACD",
     ema: "تقاطع EMA",
