@@ -75,6 +75,10 @@ const translations = {
     onlySignalChange: "Only on Signal Change",
     hourly: "Hourly",
     lastNotif: "Last Notifications",
+    newsAnalysis: "News Analysis",
+    noNews: "No news available",
+    bullish: "Bullish",
+    bearish: "Bearish",
     noNotif: "No notifications yet",
     
     // Probability Chart
@@ -183,6 +187,10 @@ const translations = {
     onlySignalChange: "فقط هنگام تغییر سیگنال",
     hourly: "ساعتی",
     lastNotif: "آخرین نوتیفیکیشن‌ها",
+    newsAnalysis: "تحلیل اخبار",
+    noNews: "خبری موجود نیست",
+    bullish: "صعودی",
+    bearish: "نزولی",
     noNotif: "هنوز نوتیفیکیشنی نیست",
     
     // Probability Chart

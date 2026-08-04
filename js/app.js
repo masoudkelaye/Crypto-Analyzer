@@ -1,7 +1,8 @@
 // Main Application Module
-import { TechnicalAnalysis, fetchFearGreedIndex, fetchOrderBook, fetchFundingRate, analyzeMultiTimeframe } from './analysis.js';
+import { TechnicalAnalysis, fetchFearGreedIndex, fetchOrderBook, fetchFundingRate, analyzeMultiTimeframe, analyzeBTCInfluence } from './analysis.js';
 import { t, setLanguage, applyTranslations, currentLang } from './i18n.js';
 import { CandlestickChart } from './chart.js';
+import { fetchCryptoNews, analyzeNewsSentiment } from './news.js';
 
 // App State
 const state = {
@@ -23,7 +24,8 @@ const state = {
   lastSignal: null,
   dataSource: null,
   lastFetchTime: 0,
-  cachedData: null
+  cachedData: null,
+  newsSentiment: null
 };
 
 const analysis = new TechnicalAnalysis();
@@ -455,22 +457,33 @@ async function runAnalysis() {
     console.log(`\n📡 Fetching advanced data...`);
     const symbol = getBinanceVisionSymbol(state.crypto);
     
-    const [orderBook, fundingRate, multiTimeframe] = await Promise.allSettled([
+    const [orderBook, fundingRate, multiTimeframe, btcInfluence, news] = await Promise.allSettled([
       fetchOrderBook(symbol),
       fetchFundingRate(symbol),
-      analyzeMultiTimeframe(state.crypto, state.timeframe)
+      analyzeMultiTimeframe(state.crypto, state.timeframe),
+      analyzeBTCInfluence(state.crypto),
+      fetchCryptoNews(state.crypto, 10)
     ]);
     
     const orderBookData = orderBook.status === 'fulfilled' ? orderBook.value : { bidAskRatio: 1, signal: 'neutral' };
     const fundingData = fundingRate.status === 'fulfilled' ? fundingRate.value : { rate: 0, signal: 'neutral' };
     const multiTFData = multiTimeframe.status === 'fulfilled' ? multiTimeframe.value : { signal: 'neutral', alignment: 50 };
     
+    // Analyze news sentiment
+    const newsData = news.status === 'fulfilled' ? news.value : [];
+    const newsSentiment = analyzeNewsSentiment(newsData);
+    console.log(`📰 News sentiment: ${newsSentiment.overallSentiment} (${newsSentiment.positiveCount} positive, ${newsSentiment.negativeCount} negative)`);
+    
     console.log(`\n🧮 Running ADVANCED technical analysis...`);
+    
+    const btcInfluenceData = btcInfluence.status === 'fulfilled' ? btcInfluence.value : { dominance: 0, correlation: 0, btcTrend: 'neutral', signal: 'neutral', score: 0 };
     
     const extraData = {
       orderBook: orderBookData,
       fundingRate: fundingData,
-      multiTimeframe: multiTFData
+      multiTimeframe: multiTFData,
+      btcInfluence: btcInfluenceData,
+      news: newsSentiment
     };
     
     const result = analysis.analyzeAll(candles, extraData);
@@ -491,6 +504,7 @@ async function runAnalysis() {
     }
     
     state.lastAnalysis = result;
+    state.newsSentiment = newsSentiment;
     renderResults(result);
     
     checkNotification(result);
@@ -520,6 +534,7 @@ function renderResults(result) {
   renderFearGreed(state.fearGreedData);
   renderTopTraders(result.topTraders);
   renderProbabilityChart(result);
+  renderNews();
   renderNotifications();
   updateLastUpdateTime();
 }
@@ -874,6 +889,72 @@ function renderIndicators(result) {
     `;
   }
 }
+  
+  // ULTRA-ADVANCED INDICATORS
+  if (result.ultraIndicators) {
+    const ultra = result.ultraIndicators;
+    html += '<h3 class="section-title">🚀 Ultra-Advanced Analysis</h3>';
+    
+    // Candlestick Patterns
+    if (ultra.candlePatterns && ultra.candlePatterns.patterns && ultra.candlePatterns.patterns.length > 0) {
+      html += '<div class="indicator-card">';
+      html += '<div class="indicator-label">🕯️ Candlestick Patterns</div>';
+      html += '<div class="indicator-value ' + (ultra.candlePatterns.signal === 'bullish' ? 'bullish' : ultra.candlePatterns.signal === 'bearish' ? 'bearish' : 'neutral') + '">';
+      html += ultra.candlePatterns.patterns.map(p => p.name).join(', ');
+      html += '</div></div>';
+    }
+    
+    // Divergence
+    if (ultra.divergence && ultra.divergence.divergence !== 'none') {
+      html += '<div class="indicator-card">';
+      html += '<div class="indicator-label">📐 RSI Divergence</div>';
+      html += '<div class="indicator-value ' + (ultra.divergence.signal === 'bullish' ? 'bullish' : ultra.divergence.signal === 'bearish' ? 'bearish' : 'neutral') + '">';
+      html += ultra.divergence.divergence + ' divergence detected';
+      html += '</div></div>';
+    }
+    
+    // Market Structure
+    if (ultra.marketStructure) {
+      html += '<div class="indicator-card">';
+      html += '<div class="indicator-label">🏗️ Market Structure</div>';
+      html += '<div class="indicator-value ' + (ultra.marketStructure.trend === 'bullish' ? 'bullish' : ultra.marketStructure.trend === 'bearish' ? 'bearish' : 'neutral') + '">';
+      html += ultra.marketStructure.structure + ' (' + ultra.marketStructure.trend + ')';
+      html += '</div></div>';
+    }
+    
+    // Smart Money
+    if (ultra.smartMoney) {
+      html += '<div class="indicator-card">';
+      html += '<div class="indicator-label">💎 Smart Money Concepts</div>';
+      if (ultra.smartMoney.activeBullishOB) {
+        html += '<div class="indicator-value bullish">At Bullish Order Block</div>';
+      } else if (ultra.smartMoney.activeBearishOB) {
+        html += '<div class="indicator-value bearish">At Bearish Order Block</div>';
+      } else {
+        html += '<div class="indicator-value neutral">No active zones</div>';
+      }
+      if (ultra.smartMoney.fvg && ultra.smartMoney.fvg.length > 0) {
+        const unfilled = ultra.smartMoney.fvg.filter(f => !f.filled);
+        if (unfilled.length > 0) {
+          html += '<div style="font-size: 0.85em; margin-top: 5px;">' + unfilled.length + ' unfilled FVG</div>';
+        }
+      }
+      html += '</div>';
+    }
+    
+    // BTC Influence
+    if (ultra.btcInfluence && ultra.btcInfluence.correlation) {
+      html += '<div class="indicator-card">';
+      html += '<div class="indicator-label">📊 BTC Influence</div>';
+      html += '<div class="indicator-value ' + (ultra.btcInfluence.signal === 'bullish' ? 'bullish' : ultra.btcInfluence.signal === 'bearish' ? 'bearish' : 'neutral') + '">';
+      html += 'BTC: ' + ultra.btcInfluence.btcTrend + ' | Correlation: ' + (ultra.btcInfluence.correlation * 100).toFixed(0) + '%';
+      if (ultra.btcInfluence.dominance) {
+        html += ' | Dominance: ' + ultra.btcInfluence.dominance.toFixed(1) + '%';
+      }
+      html += '</div></div>';
+    }
+  }
+  
 
 function renderFearGreed(data) {
   const container = document.getElementById('fear-greed-panel');
@@ -906,6 +987,90 @@ function renderFearGreed(data) {
       <div class="fg-desc">${data.classification}</div>
     </div>
   `;
+}
+
+function renderNews() {
+  const container = document.getElementById('news-panel');
+  if (!container) return;
+  
+  const news = state.newsSentiment;
+  
+  if (!news || !news.headlines || news.headlines.length === 0) {
+    container.innerHTML = `<div class="no-data" data-i18n="noNews">No news available</div>`;
+    return;
+  }
+  
+  // Overall sentiment display
+  let sentimentClass = 'neutral';
+  let sentimentText = news.overallSentiment.replace('_', ' ').toUpperCase();
+  let sentimentColor = '#f59e0b';
+  
+  if (news.overallSentiment === 'very_bullish') {
+    sentimentClass = 'bullish';
+    sentimentColor = '#22c55e';
+    sentimentText = '🟢 VERY BULLISH';
+  } else if (news.overallSentiment === 'bullish') {
+    sentimentClass = 'bullish';
+    sentimentColor = '#22c55e';
+    sentimentText = '🟢 BULLISH';
+  } else if (news.overallSentiment === 'very_bearish') {
+    sentimentClass = 'bearish';
+    sentimentColor = '#ef4444';
+    sentimentText = '🔴 VERY BEARISH';
+  } else if (news.overallSentiment === 'bearish') {
+    sentimentClass = 'bearish';
+    sentimentColor = '#ef4444';
+    sentimentText = '🔴 BEARISH';
+  } else {
+    sentimentText = '🟡 NEUTRAL';
+  }
+  
+  let html = `
+    <div class="news-overview" style="text-align: center; margin-bottom: 1rem;">
+      <div style="font-size: 1.2rem; font-weight: 700; color: ${sentimentColor};">${sentimentText}</div>
+      <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem;">
+        ${t('probability')}: ${news.posPercent}% ${t('bullish')} | ${news.negPercent}% ${t('bearish')}
+      </div>
+      <div class="news-bar" style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 0.5rem;">
+        <div style="width: ${news.posPercent}%; background: var(--accent-green);"></div>
+        <div style="width: ${100 - news.posPercent - news.negPercent}%; background: var(--accent-yellow);"></div>
+        <div style="width: ${news.negPercent}%; background: var(--accent-red);"></div>
+      </div>
+    </div>
+    
+    <div class="news-headlines" style="max-height: 200px; overflow-y: auto;">
+  `;
+  
+  news.headlines.slice(0, 5).forEach(headline => {
+    const time = new Date(headline.publishedAt).toLocaleString(currentLang === 'fa' ? 'fa-IR' : 'en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+    
+    let icon = '📄';
+    let color = 'var(--text-secondary)';
+    if (headline.sentiment === 'positive') {
+      icon = '🟢';
+      color = 'var(--accent-green)';
+    } else if (headline.sentiment === 'negative') {
+      icon = '🔴';
+      color = 'var(--accent-red)';
+    }
+    
+    html += `
+      <div style="padding: 0.5rem 0; border-bottom: 1px solid var(--border-color); font-size: 0.85rem;">
+        <span style="color: ${color};">${icon}</span>
+        <span style="color: var(--text-primary);">${headline.title}</span>
+        <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.25rem;">
+          ${headline.source} • ${time}
+        </div>
+      </div>
+    `;
+  });
+  
+  html += `</div>`;
+  
+  container.innerHTML = html;
 }
 
 function renderTopTraders(traders) {

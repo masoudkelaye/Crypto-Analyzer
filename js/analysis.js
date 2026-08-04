@@ -315,6 +315,377 @@ class TechnicalAnalysis {
     return { k: Math.round(k * 100) / 100, d: Math.round(d * 100) / 100, signal };
   }
 
+
+  // ============================================
+  // ULTRA-ADVANCED: Candlestick Pattern Recognition
+  // ============================================
+  detectCandlestickPatterns(candles) {
+    if (candles.length < 3) return { patterns: [], score: 0, signal: 'neutral' };
+    
+    const patterns = [];
+    const recent = candles.slice(-5);
+    let score = 0;
+    
+    for (let i = 0; i < recent.length; i++) {
+      const c = recent[i];
+      const body = Math.abs(c.close - c.open);
+      const range = c.high - c.low;
+      const upperWick = c.high - Math.max(c.open, c.close);
+      const lowerWick = Math.min(c.open, c.close) - c.low;
+      
+      // Hammer (bullish reversal)
+      if (lowerWick > body * 2 && upperWick < body * 0.3 && c.close > c.open) {
+        patterns.push({ name: 'Hammer', type: 'bullish', weight: 12 });
+        score += 12;
+      }
+      
+      // Shooting Star (bearish reversal)
+      if (upperWick > body * 2 && lowerWick < body * 0.3 && c.close < c.open) {
+        patterns.push({ name: 'Shooting Star', type: 'bearish', weight: 12 });
+        score -= 12;
+      }
+      
+      // Doji (indecision)
+      if (body < range * 0.1 && range > 0) {
+        patterns.push({ name: 'Doji', type: 'neutral', weight: 5 });
+      }
+      
+      // Engulfing patterns
+      if (i > 0) {
+        const prev = recent[i - 1];
+        // Bullish Engulfing
+        if (prev.close < prev.open && c.close > c.open && 
+            c.open < prev.close && c.close > prev.open) {
+          patterns.push({ name: 'Bullish Engulfing', type: 'bullish', weight: 15 });
+          score += 15;
+        }
+        // Bearish Engulfing
+        if (prev.close > prev.open && c.close < c.open && 
+            c.open > prev.close && c.close < prev.open) {
+          patterns.push({ name: 'Bearish Engulfing', type: 'bearish', weight: 15 });
+          score -= 15;
+        }
+      }
+    }
+    
+    let signal = 'neutral';
+    if (score > 10) signal = 'bullish';
+    else if (score < -10) signal = 'bearish';
+    
+    return { patterns, score, signal };
+  }
+
+  // ============================================
+  // ULTRA-ADVANCED: Divergence Detection (RSI vs Price)
+  // ============================================
+  detectDivergence(candles) {
+    if (candles.length < 30) return { divergence: 'none', signal: 'neutral', score: 0 };
+    
+    const closes = candles.map(c => c.close);
+    const rsiValues = [];
+    
+    // Calculate RSI series
+    for (let i = 14; i <= closes.length; i++) {
+      const slice = closes.slice(0, i);
+      const rsi = this.calculateRSI(slice, 14);
+      rsiValues.push({ price: closes[i - 1], rsi: rsi.value, index: i - 1 });
+    }
+    
+    if (rsiValues.length < 10) return { divergence: 'none', signal: 'neutral', score: 0 };
+    
+    const recent = rsiValues.slice(-20);
+    let score = 0;
+    let divergence = 'none';
+    
+    // Find swing highs and lows
+    const swingHighs = [];
+    const swingLows = [];
+    
+    for (let i = 2; i < recent.length - 2; i++) {
+      if (recent[i].price > recent[i-1].price && recent[i].price > recent[i-2].price &&
+          recent[i].price > recent[i+1].price && recent[i].price > recent[i+2].price) {
+        swingHighs.push(recent[i]);
+      }
+      if (recent[i].price < recent[i-1].price && recent[i].price < recent[i-2].price &&
+          recent[i].price < recent[i+1].price && recent[i].price < recent[i+2].price) {
+        swingLows.push(recent[i]);
+      }
+    }
+    
+    // Bearish divergence: price higher high, RSI lower high
+    if (swingHighs.length >= 2) {
+      const last = swingHighs[swingHighs.length - 1];
+      const prev = swingHighs[swingHighs.length - 2];
+      if (last.price > prev.price && last.rsi < prev.rsi) {
+        divergence = 'bearish';
+        score -= 15;
+      }
+    }
+    
+    // Bullish divergence: price lower low, RSI higher low
+    if (swingLows.length >= 2) {
+      const last = swingLows[swingLows.length - 1];
+      const prev = swingLows[swingLows.length - 2];
+      if (last.price < prev.price && last.rsi > prev.rsi) {
+        divergence = 'bullish';
+        score += 15;
+      }
+    }
+    
+    let signal = 'neutral';
+    if (score > 10) signal = 'bullish';
+    else if (score < -10) signal = 'bearish';
+    
+    return { divergence, signal, score };
+  }
+
+  // ============================================
+  // ULTRA-ADVANCED: Market Structure (HH/HL/LH/LL)
+  // ============================================
+  analyzeMarketStructure(candles, lookback = 30) {
+    if (candles.length < lookback) return { structure: 'ranging', trend: 'neutral', score: 0 };
+    
+    const recent = candles.slice(-lookback);
+    const highs = [];
+    const lows = [];
+    
+    // Find swing points
+    for (let i = 2; i < recent.length - 2; i++) {
+      if (recent[i].high > recent[i-1].high && recent[i].high > recent[i-2].high &&
+          recent[i].high > recent[i+1].high && recent[i].high > recent[i+2].high) {
+        highs.push(recent[i].high);
+      }
+      if (recent[i].low < recent[i-1].low && recent[i].low < recent[i-2].low &&
+          recent[i].low < recent[i+1].low && recent[i].low < recent[i+2].low) {
+        lows.push(recent[i].low);
+      }
+    }
+    
+    let structure = 'ranging';
+    let trend = 'neutral';
+    let score = 0;
+    
+    if (highs.length >= 2 && lows.length >= 2) {
+      const lastHigh = highs[highs.length - 1];
+      const prevHigh = highs[highs.length - 2];
+      const lastLow = lows[lows.length - 1];
+      const prevLow = lows[lows.length - 2];
+      
+      if (lastHigh > prevHigh && lastLow > prevLow) {
+        structure = 'uptrend';
+        trend = 'bullish';
+        score = 20;
+      } else if (lastHigh < prevHigh && lastLow < prevLow) {
+        structure = 'downtrend';
+        trend = 'bearish';
+        score = -20;
+      } else if (lastHigh > prevHigh && lastLow < prevLow) {
+        structure = 'expanding';
+        trend = 'neutral';
+        score = 0;
+      } else if (lastHigh < prevHigh && lastLow > prevLow) {
+        structure = 'contracting';
+        trend = 'neutral';
+        score = 0;
+      }
+    }
+    
+    return { structure, trend, score };
+  }
+
+  // ============================================
+  // ULTRA-ADVANCED: Smart Money Concepts (Order Blocks & FVG)
+  // ============================================
+  detectSmartMoneyLevels(candles) {
+    if (candles.length < 20) return { orderBlocks: [], fvg: [], signal: 'neutral', score: 0 };
+    
+    const recent = candles.slice(-20);
+    const currentPrice = candles[candles.length - 1].close;
+    const orderBlocks = [];
+    const fvg = [];
+    let score = 0;
+    
+    // Detect Order Blocks (strong institutional candles)
+    for (let i = 2; i < recent.length - 1; i++) {
+      const body = Math.abs(recent[i].close - recent[i].open);
+      const range = recent[i].high - recent[i].low;
+      
+      // Strong bullish candle (potential bullish OB)
+      if (body > range * 0.7 && recent[i].close > recent[i].open && 
+          body > (recent[i-1].high - recent[i-1].low) * 1.5) {
+        orderBlocks.push({
+          type: 'bullish',
+          high: recent[i].open,
+          low: recent[i].close,
+          strength: body / range
+        });
+      }
+      
+      // Strong bearish candle (potential bearish OB)
+      if (body > range * 0.7 && recent[i].close < recent[i].open && 
+          body > (recent[i-1].high - recent[i-1].low) * 1.5) {
+        orderBlocks.push({
+          type: 'bearish',
+          high: recent[i].close,
+          low: recent[i].open,
+          strength: body / range
+        });
+      }
+    }
+    
+    // Detect Fair Value Gaps (FVG)
+    for (let i = 2; i < recent.length; i++) {
+      // Bullish FVG
+      if (recent[i].low > recent[i-2].high) {
+        fvg.push({
+          type: 'bullish',
+          top: recent[i].low,
+          bottom: recent[i-2].high,
+          filled: currentPrice < recent[i-2].high
+        });
+      }
+      // Bearish FVG
+      if (recent[i].high < recent[i-2].low) {
+        fvg.push({
+          type: 'bearish',
+          top: recent[i-2].low,
+          bottom: recent[i].high,
+          filled: currentPrice > recent[i-2].low
+        });
+      }
+    }
+    
+    // Check if price is near order blocks
+    const activeBullishOB = orderBlocks.find(ob => 
+      ob.type === 'bullish' && 
+      currentPrice >= ob.low * 0.99 && 
+      currentPrice <= ob.high * 1.01
+    );
+    
+    const activeBearishOB = orderBlocks.find(ob => 
+      ob.type === 'bearish' && 
+      currentPrice <= ob.high * 1.01 && 
+      currentPrice >= ob.low * 0.99
+    );
+    
+    if (activeBullishOB) {
+      score += 15;
+    }
+    if (activeBearishOB) {
+      score -= 15;
+    }
+    
+    // Check unfilled FVGs
+    const unfilledBullishFVG = fvg.filter(f => f.type === 'bullish' && !f.filled);
+    const unfilledBearishFVG = fvg.filter(f => f.type === 'bearish' && !f.filled);
+    
+    if (unfilledBullishFVG.length > 0) score += 5;
+    if (unfilledBearishFVG.length > 0) score -= 5;
+    
+    let signal = 'neutral';
+    if (score > 10) signal = 'bullish';
+    else if (score < -10) signal = 'bearish';
+    
+    return { orderBlocks, fvg, activeBullishOB, activeBearishOB, signal, score };
+  }
+
+  // ============================================
+  // ULTRA-ADVANCED: BTC Dominance & Altcoin Correlation
+  // ============================================
+  async analyzeBTCInfluence(cryptoId) {
+    if (cryptoId === 'bitcoin') {
+      return { dominance: 50, correlation: 1, btcTrend: 'neutral', signal: 'neutral', score: 0 };
+    }
+    
+    try {
+      // Fetch BTC dominance
+      const globalResp = await fetch('https://api.coingecko.com/api/v3/global');
+      const globalData = await globalResp.json();
+      const dominance = globalData.data.market_cap_percentage.btc;
+      
+      // Fetch BTC and altcoin prices for correlation
+      const btcResp = await fetch('https://data-api.binance.vision/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=30');
+      const altResp = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${this.getAltcoinSymbol(cryptoId)}&interval=1d&limit=30`);
+      
+      const btcData = await btcResp.json();
+      const altData = await altResp.json();
+      
+      if (!Array.isArray(btcData) || !Array.isArray(altData) || btcData.length < 10 || altData.length < 10) {
+        return { dominance, correlation: 0, btcTrend: 'neutral', signal: 'neutral', score: 0 };
+      }
+      
+      const btcPrices = btcData.map(k => parseFloat(k[4]));
+      const altPrices = altData.map(k => parseFloat(k[4]));
+      
+      // Calculate correlation
+      const minLen = Math.min(btcPrices.length, altPrices.length);
+      const btcSlice = btcPrices.slice(-minLen);
+      const altSlice = altPrices.slice(-minLen);
+      
+      const btcReturns = [];
+      const altReturns = [];
+      for (let i = 1; i < btcSlice.length; i++) {
+        btcReturns.push((btcSlice[i] - btcSlice[i-1]) / btcSlice[i-1]);
+        altReturns.push((altSlice[i] - altSlice[i-1]) / altSlice[i-1]);
+      }
+      
+      // Pearson correlation
+      const n = btcReturns.length;
+      const btcMean = btcReturns.reduce((a, b) => a + b, 0) / n;
+      const altMean = altReturns.reduce((a, b) => a + b, 0) / n;
+      
+      let numerator = 0, btcVariance = 0, altVariance = 0;
+      for (let i = 0; i < n; i++) {
+        const btcDiff = btcReturns[i] - btcMean;
+        const altDiff = altReturns[i] - altMean;
+        numerator += btcDiff * altDiff;
+        btcVariance += btcDiff * btcDiff;
+        altVariance += altDiff * altDiff;
+      }
+      
+      const correlation = numerator / Math.sqrt(btcVariance * altVariance);
+      
+      // BTC trend
+      const btcChange = (btcPrices[btcPrices.length - 1] - btcPrices[0]) / btcPrices[0];
+      const btcTrend = btcChange > 0.02 ? 'bullish' : btcChange < -0.02 ? 'bearish' : 'neutral';
+      
+      let signal = 'neutral';
+      let score = 0;
+      
+      // High correlation with BTC
+      if (Math.abs(correlation) > 0.7) {
+        if (btcTrend === 'bullish') {
+          signal = 'bullish';
+          score = 10;
+        } else if (btcTrend === 'bearish') {
+          signal = 'bearish';
+          score = -10;
+        }
+      }
+      
+      // BTC dominance effect
+      if (dominance > 55) score -= 5;
+      
+      console.log(`✅ BTC Influence: Dominance ${dominance.toFixed(1)}%, Correlation ${correlation.toFixed(2)}, BTC ${btcTrend}`);
+      
+      return { dominance, correlation: Math.round(correlation * 100) / 100, btcTrend, signal, score };
+    } catch (e) {
+      console.warn('BTC Influence analysis failed:', e);
+      return { dominance: 0, correlation: 0, btcTrend: 'neutral', signal: 'neutral', score: 0 };
+    }
+  }
+  
+  getAltcoinSymbol(cryptoId) {
+    const map = {
+      'ethereum': 'ETHUSDT', 'binancecoin': 'BNBUSDT', 'ripple': 'XRPUSDT',
+      'cardano': 'ADAUSDT', 'solana': 'SOLUSDT', 'dogecoin': 'DOGEUSDT',
+      'polkadot': 'DOTUSDT', 'avalanche-2': 'AVAXUSDT', 'chainlink': 'LINKUSDT',
+      'tron': 'TRXUSDT', 'litecoin': 'LTCUSDT', 'matic-network': 'MATICUSDT',
+      'uniswap': 'UNIUSDT', 'stellar': 'XLMUSDT'
+    };
+    return map[cryptoId] || (cryptoId.toUpperCase() + 'USDT');
+  }
+
   // Calculate comprehensive signals with 5 NEW parameters
   analyzeAll(candles, extraData = {}) {
     const closes = candles.map(c => c.close);
@@ -338,6 +709,13 @@ class TechnicalAnalysis {
     const orderBook = extraData.orderBook || { bidAskRatio: 1, imbalance: 0, signal: 'neutral' };
     const fundingRate = extraData.fundingRate || { rate: 0, signal: 'neutral' };
     const multiTimeframe = extraData.multiTimeframe || { signal: 'neutral', alignment: 0 };
+    
+    // ULTRA-ADVANCED: 5 new professional indicators
+    const candlePatterns = this.detectCandlestickPatterns(candles);
+    const divergence = this.detectDivergence(candles);
+    const marketStructure = this.analyzeMarketStructure(candles);
+    const smartMoney = this.detectSmartMoneyLevels(candles);
+    const btcInfluence = extraData.btcInfluence || { dominance: 0, correlation: 0, btcTrend: 'neutral', signal: 'neutral', score: 0 };
     
     const currentPrice = closes[closes.length - 1];
     
@@ -420,6 +798,70 @@ class TechnicalAnalysis {
       bearishFactors.push({ name: 'Multi-TF: Higher TF Bearish', weight: 15 });
     }
     
+    
+    // ULTRA-ADVANCED: Candlestick Patterns (Weight: 10-15)
+    if (candlePatterns.signal === 'bullish') { 
+      bullishScore += Math.min(candlePatterns.score, 15);
+      candlePatterns.patterns.filter(p => p.type === 'bullish').forEach(p => {
+        bullishFactors.push({ name: '🕯️ ' + p.name, weight: p.weight });
+      });
+    } else if (candlePatterns.signal === 'bearish') { 
+      bearishScore += Math.min(Math.abs(candlePatterns.score), 15);
+      candlePatterns.patterns.filter(p => p.type === 'bearish').forEach(p => {
+        bearishFactors.push({ name: '🕯️ ' + p.name, weight: p.weight });
+      });
+    }
+    
+    // ULTRA-ADVANCED: Divergence (Weight: 15)
+    if (divergence.signal === 'bullish') {
+      bullishScore += 15;
+      bullishFactors.push({ name: '📐 RSI Bullish Divergence', weight: 15 });
+    } else if (divergence.signal === 'bearish') {
+      bearishScore += 15;
+      bearishFactors.push({ name: '📐 RSI Bearish Divergence', weight: 15 });
+    }
+    
+    // ULTRA-ADVANCED: Market Structure (Weight: 20)
+    if (marketStructure.trend === 'bullish') {
+      bullishScore += 20;
+      bullishFactors.push({ name: '🏗️ Market: ' + marketStructure.structure, weight: 20 });
+    } else if (marketStructure.trend === 'bearish') {
+      bearishScore += 20;
+      bearishFactors.push({ name: '🏗️ Market: ' + marketStructure.structure, weight: 20 });
+    }
+    
+    // ULTRA-ADVANCED: Smart Money (Weight: 15-20)
+    if (smartMoney.signal === 'bullish') {
+      bullishScore += Math.min(smartMoney.score, 20);
+      if (smartMoney.activeBullishOB) bullishFactors.push({ name: '💎 Bullish Order Block', weight: 15 });
+      if (smartMoney.fvg.filter(f => f.type === 'bullish' && !f.filled).length > 0) {
+        bullishFactors.push({ name: '💎 Unfilled Bullish FVG', weight: 10 });
+      }
+    } else if (smartMoney.signal === 'bearish') {
+      bearishScore += Math.min(Math.abs(smartMoney.score), 20);
+      if (smartMoney.activeBearishOB) bearishFactors.push({ name: '💎 Bearish Order Block', weight: 15 });
+    }
+    
+    // ULTRA-ADVANCED: News Sentiment (Weight: 15)
+    if (extraData.news && extraData.news.score !== 0) {
+      if (extraData.news.score > 0) {
+        bullishScore += Math.abs(extraData.news.score);
+        bullishFactors.push({ name: `📰 News: ${extraData.news.overallSentiment.replace('_', ' ')}`, weight: Math.abs(extraData.news.score) });
+      } else {
+        bearishScore += Math.abs(extraData.news.score);
+        bearishFactors.push({ name: `📰 News: ${extraData.news.overallSentiment.replace('_', ' ')}`, weight: Math.abs(extraData.news.score) });
+      }
+    }
+    
+    // ULTRA-ADVANCED: BTC Influence (Weight: 10)
+    if (btcInfluence.signal === 'bullish') {
+      bullishScore += Math.abs(btcInfluence.score);
+      bullishFactors.push({ name: '📊 BTC: ' + btcInfluence.btcTrend + ' (Corr: ' + btcInfluence.correlation + ')', weight: Math.abs(btcInfluence.score) });
+    } else if (btcInfluence.signal === 'bearish') {
+      bearishScore += Math.abs(btcInfluence.score);
+      bearishFactors.push({ name: '📊 BTC: ' + btcInfluence.btcTrend + ' (Corr: ' + btcInfluence.correlation + ')', weight: Math.abs(btcInfluence.score) });
+    }
+    
     // Volume confirmation
     if (volume.signal === 'high_volume') {
       if (bullishScore > bearishScore) { bullishScore += 5; bullishFactors.push({ name: 'Volume Confirms', weight: 5 }); }
@@ -427,7 +869,7 @@ class TechnicalAnalysis {
     }
     
     const totalScore = bullishScore - bearishScore;
-    const maxScore = 150; // Increased max score
+    const maxScore = 250; // Increased max score
     
     // Calculate probability (more accurate)
     const rawProbability = Math.abs(totalScore) / maxScore;
@@ -486,6 +928,8 @@ class TechnicalAnalysis {
       indicators: { rsi, macd, bb, volume, sr, trend, emaCross },
       // NEW indicators
       advancedIndicators: { volumeProfile, adx, stochRSI, orderBook, fundingRate, multiTimeframe },
+      ultraIndicators: { candlePatterns, divergence, marketStructure, smartMoney, btcInfluence },
+      newsSentiment: extraData.news || null,
       bullishFactors, bearishFactors, neutralFactors,
       topTraders,
       currentPrice,
@@ -679,4 +1123,4 @@ function getSymbol(cryptoId) {
   return map[cryptoId] || (cryptoId.toUpperCase() + 'USDT');
 }
 
-export { TechnicalAnalysis, fetchFearGreedIndex, fetchOrderBook, fetchFundingRate, analyzeMultiTimeframe };
+export { TechnicalAnalysis, fetchFearGreedIndex, fetchOrderBook, fetchFundingRate, analyzeMultiTimeframe, analyzeBTCInfluence };
