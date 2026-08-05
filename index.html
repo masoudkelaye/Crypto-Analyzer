@@ -3,249 +3,156 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Crypto Analyzer Pro - سیگنال‌های هوشمند معاملاتی</title>
-  
-  <!-- PWA Meta Tags -->
-  <meta name="description" content="Advanced crypto trading analysis with AI-powered signals, technical indicators, and smart notifications">
+  <title>Crypto Analyzer Pro</title>
+  <meta name="description" content="Advanced crypto trading analysis with AI-powered signals">
   <meta name="theme-color" content="#0a0a1a">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Crypto Analyzer">
-  
-  <!-- PWA Icons & Manifest -->
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png">
-  <link rel="apple-touch-icon" href="img/icon-192.png">
-  
-  <!-- Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  
-  <!-- Styles -->
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  
-  <!-- Loading Overlay -->
+  <!-- Loading -->
   <div id="loading-overlay" class="loading-overlay">
-    <div style="text-align: center;">
+    <div style="text-align:center">
       <div class="spinner"></div>
-      <div class="loading-text" data-i18n="analyzing">در حال تحلیل...</div>
+      <div class="loading-text">در حال تحلیل...</div>
     </div>
   </div>
-  
-  <!-- Status Bar -->
+
+  <!-- Status -->
   <div id="status-bar" class="status-bar"></div>
-  
+
   <!-- Header -->
   <header class="app-header">
     <div class="header-content">
       <div class="header-brand">
         <span class="logo">📊</span>
         <div>
-          <h1 data-i18n="appTitle">کریپتو آنالایزر پرو</h1>
-          <span class="subtitle" data-i18n="appSubtitle">سیگنال‌های هوشمند معاملاتی و تحلیل</span>
+          <h1 id="app-title">Crypto Analyzer Pro</h1>
+          <span class="subtitle" id="app-subtitle">سیگنال‌های هوشمند معاملاتی</span>
         </div>
       </div>
       <div class="header-actions">
-        <button id="install-btn" class="install-btn" style="display:none" data-i18n="installApp">نصب اپلیکیشن</button>
-        <button class="lang-btn" onclick="toggleLanguage()" data-i18n="langSwitch">English</button>
+        <button class="lang-btn" onclick="toggleLanguage()" id="lang-btn">English</button>
       </div>
     </div>
   </header>
-  
-  <!-- Controls Bar -->
+
+  <!-- Controls -->
   <div class="controls-bar">
     <div class="controls-content">
       <div class="control-group">
-        <label data-i18n="selectCrypto">ارز دیجیتال</label>
+        <label id="label-crypto">ارز دیجیتال</label>
         <select id="crypto-select"></select>
       </div>
-      
       <div class="control-group">
-        <label data-i18n="selectTimeframe">تایم‌فریم</label>
+        <label id="label-tf">تایم‌فریم</label>
         <select id="timeframe-select"></select>
       </div>
-      
-      <button id="analyze-btn" class="analyze-btn" data-i18n="analyzeBtn">🔍 تحلیل الان</button>
-      
+      <button id="analyze-btn" class="analyze-btn">🔍 تحلیل الان</button>
       <div class="auto-refresh-group">
         <label class="toggle-switch">
           <input type="checkbox" id="auto-refresh-toggle">
           <span class="toggle-slider"></span>
         </label>
-        <label style="font-size: 0.85rem; color: var(--text-secondary);" data-i18n="autoRefresh">بروزرسانی خودکار</label>
-        
-        <input type="number" id="refresh-interval" value="60" min="15" max="3600" style="width: 70px; padding: 0.3rem; background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 6px; text-align: center;">
-        <span style="font-size: 0.75rem; color: var(--text-muted);" data-i18n="seconds">ثانیه</span>
+        <label style="font-size:.85rem;color:var(--text-secondary)" id="label-autorefresh">بروزرسانی خودکار</label>
+        <input type="number" id="refresh-interval" value="60" min="15" max="3600" style="width:70px;padding:.3rem;background:var(--bg-card);border:1px solid var(--border-color);color:var(--text-primary);border-radius:6px;text-align:center">
+        <span style="font-size:.75rem;color:var(--text-muted)" id="label-seconds">ثانیه</span>
       </div>
     </div>
   </div>
-  
-  <!-- Main Content -->
+
+  <!-- Main -->
   <div class="main-content">
-    <!-- Left Column -->
+    <!-- Left -->
     <div class="content-left">
-      <!-- Signal Card -->
-      <div id="signal-card" class="signal-card wait">
-        <div class="signal-header">
-          <h2 data-i18n="overallSignal">سیگنال کلی</h2>
-          <div class="signal-badge wait" data-i18n="waitSignal">🟡 صبر - سیگنال واضحی نیست</div>
-        </div>
-      </div>
-      
-      <!-- Chart -->
+      <div id="signal-card" class="signal-card wait"></div>
+
       <div class="chart-section">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-          <h3 data-i18n="chartTitle" style="margin: 0;">نمودار قیمت و تحلیل تکنیکال</h3>
-          <div style="display: flex; gap: 0.5rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+          <h3 style="margin:0" id="label-chart">نمودار قیمت</h3>
+          <div style="display:flex;gap:.5rem">
             <button id="chart-internal-btn" class="chart-tab active" onclick="switchChart('internal')">📊 Internal</button>
             <button id="chart-tv-btn" class="chart-tab" onclick="switchChart('tradingview')">📈 TradingView</button>
           </div>
         </div>
-        
-        <!-- Internal Chart -->
         <div id="internal-chart-container">
-          <canvas id="price-chart" style="width: 100%; height: 500px; border-radius: 8px;"></canvas>
-          <div style="display: flex; gap: 1rem; margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted);">
-            <span style="color: #f59e0b;">━━ EMA 9</span>
-            <span style="color: #8b5cf6;">━━ EMA 21</span>
-            <span style="color: #3b82f6;">━━ Bollinger Bands</span>
-          </div>
+          <canvas id="price-chart" style="width:100%;height:500px;border-radius:8px"></canvas>
         </div>
-        
-        <!-- TradingView Chart (hidden by default) -->
-        <div id="tradingview-widget" style="display: none;"></div>
+        <div id="tradingview-widget" style="display:none"></div>
       </div>
-      
-      <!-- Technical Indicators -->
+
       <div class="indicators-section">
-        <h3 data-i18n="technicalAnalysis">اندیکاتورهای تکنیکال</h3>
-        <div id="indicators-panel">
-          <!-- Dynamically filled -->
-        </div>
-      </div>
-      
-      <!-- Advanced Indicators (NEW) -->
-      <div class="indicators-section" id="advanced-section" style="display: none;">
-        <h3>🚀 <span data-i18n="advancedAnalysis">اندیکاتورهای پیشرفته</span></h3>
-        <div id="advanced-indicators-panel">
-          <!-- Dynamically filled -->
-        </div>
+        <h3 id="label-indicators">اندیکاتورهای تکنیکال</h3>
+        <div id="indicators-panel"></div>
       </div>
     </div>
-    
-    <!-- Right Column (Sidebar) -->
+
+    <!-- Right Sidebar -->
     <div class="sidebar">
-      <!-- Probability Chart -->
       <div class="sidebar-section">
-        <h3>📊 <span data-i18n="probChart">تحلیل احتمال</span></h3>
-        <div id="probability-chart">
-          <!-- Dynamically filled -->
-        </div>
+        <h3>📊 <span id="label-prob">تحلیل احتمال</span></h3>
+        <div id="probability-chart"></div>
       </div>
-      
-      <!-- Market Sentiment -->
       <div class="sidebar-section">
-        <h3>🌡️ <span data-i18n="fearGreed">شاخص ترس و طمع</span></h3>
-        <div id="fear-greed-panel">
-          <!-- Dynamically filled -->
-        </div>
+        <h3>🌡️ <span id="label-fg">شاخص ترس و طمع</span></h3>
+        <div id="fear-greed-panel"></div>
       </div>
-      
-      <!-- Top Traders -->
       <div class="sidebar-section">
-        <h3>👥 <span data-i18n="topTraders">تحلیل تریدرهای برتر</span></h3>
-        <div id="top-traders-panel">
-          <!-- Dynamically filled -->
-        </div>
+        <h3>👥 <span id="label-traders">تحلیل تریدرهای برتر</span></h3>
+        <div id="top-traders-panel"></div>
       </div>
-      
-      <!-- Notification Settings -->
       <div class="sidebar-section">
-        <h3>🔔 <span data-i18n="notifSettings">تنظیمات نوتیفیکیشن</span></h3>
+        <h3>📰 <span id="label-news">تحلیل اخبار</span></h3>
+        <div id="news-panel"></div>
+      </div>
+      <div class="sidebar-section">
+        <h3>🔔 <span id="label-notif">تنظیمات نوتیفیکیشن</span></h3>
         <div class="notif-settings">
           <div class="notif-setting-row">
-            <label data-i18n="enableNotif">فعال‌سازی نوتیفیکیشن‌ها</label>
+            <label id="label-enablenotif">فعال‌سازی نوتیفیکیشن‌ها</label>
             <label class="toggle-switch">
               <input type="checkbox" id="notif-toggle">
               <span class="toggle-slider"></span>
             </label>
           </div>
-          
           <div class="notif-setting-row">
-            <label data-i18n="minProbability">حداقل آستانه احتمال</label>
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <label id="label-minprob">حداقل آستانه احتمال</label>
+            <div style="display:flex;align-items:center;gap:.5rem">
               <input type="range" id="notif-threshold" min="50" max="95" value="65" step="5">
               <span id="threshold-display" class="threshold-display">65%</span>
             </div>
           </div>
-          
           <div class="notif-setting-row">
-            <label data-i18n="notifFrequency">فرکانس نوتیفیکیشن</label>
+            <label id="label-freq">فرکانس نوتیفیکیشن</label>
             <select id="notif-frequency">
-              <option value="every_refresh" data-i18n="everyRefresh">هر بروزرسانی</option>
-              <option value="signal_change" selected data-i18n="onlySignalChange">فقط هنگام تغییر سیگنال</option>
-              <option value="hourly" data-i18n="hourly">ساعتی</option>
+              <option value="every_refresh" id="opt-every">هر بروزرسانی</option>
+              <option value="signal_change" selected id="opt-change">فقط هنگام تغییر سیگنال</option>
+              <option value="hourly" id="opt-hourly">ساعتی</option>
             </select>
           </div>
         </div>
       </div>
-      
-      <!-- News & Sentiment -->
       <div class="sidebar-section">
-        <h3>📰 <span data-i18n="newsAnalysis">تحلیل اخبار</span></h3>
-        <div id="news-panel">
-          <!-- Dynamically filled -->
-        </div>
-      </div>
-      
-      <!-- Notifications List -->
-      <div class="sidebar-section">
-        <div class="notif-list-header">
-          <h3>📋 <span data-i18n="lastNotif">آخرین نوتیفیکیشن‌ها</span></h3>
-        </div>
+        <h3>📋 <span id="label-lastnotif">آخرین نوتیفیکیشن‌ها</span></h3>
         <div id="notifications-list">
-          <div class="no-notif" data-i18n="noNotif">هنوز نوتیفیکیشنی نیست</div>
+          <div class="no-notif" id="no-notif-text">هنوز نوتیفیکیشنی نیست</div>
         </div>
       </div>
     </div>
   </div>
-  
+
   <!-- Footer -->
   <footer class="app-footer">
     <div class="footer-content">
-      <p class="disclaimer" data-i18n="disclaimer">
-        ⚠️ سلب مسئولیت: این ابزار فقط برای اهداف آموزشی است. توصیه مالی نیست. همیشه تحقیقات خود را انجام دهید و ریسک را مدیریت کنید.
-      </p>
-      <div class="data-sources">
-        <span data-i18n="dataSource">منابع داده</span>:
-        <span>CoinGecko</span> | <span>TradingView</span> | <span>Alternative.me</span>
-      </div>
+      <p class="disclaimer">⚠️ سلب مسئولیت: این ابزار فقط برای اهداف آموزشی است. توصیه مالی نیست.</p>
+      <div class="data-sources">منابع داده: <span>Binance Vision</span> | <span>Alternative.me</span></div>
       <div id="last-update"></div>
     </div>
   </footer>
-  
-  <!-- Scripts -->
-  <script type="module">
-    import { initApp } from './js/app.js';
-    
-    // Initialize when DOM is ready
-    document.addEventListener('DOMContentLoaded', () => {
-      initApp();
-    });
-  </script>
-  
-  <!-- Register Service Worker -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js')
-          .then(reg => console.log('SW registered'))
-          .catch(err => console.log('SW registration failed:', err));
-      });
-    }
-  </script>
+
+  <!-- ONLY load bundle.js - no inline scripts! -->
+  <script src="js/bundle.js"></script>
 </body>
 </html>
