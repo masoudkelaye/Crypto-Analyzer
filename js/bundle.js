@@ -332,6 +332,154 @@ function fetchFearGreed() {
 }
 
 // ============================================
+// CANDLESTICK CHART
+// ============================================
+function CandlestickChart(canvasId) {
+  this.canvas = document.getElementById(canvasId);
+  this.ctx = this.canvas ? this.canvas.getContext('2d') : null;
+  this.data = [];
+  this.indicators = {};
+  if (this.canvas) this.setupCanvas();
+}
+
+CandlestickChart.prototype.setupCanvas = function() {
+  var self = this;
+  function resize() {
+    var container = self.canvas.parentElement;
+    var width = container.clientWidth;
+    var height = 500;
+    self.canvas.width = width * window.devicePixelRatio;
+    self.canvas.height = height * window.devicePixelRatio;
+    self.canvas.style.width = width + 'px';
+    self.canvas.style.height = height + 'px';
+    self.ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    self.width = width;
+    self.height = height;
+    if (self.data.length > 0) self.render();
+  }
+  resize();
+  window.addEventListener('resize', function() {
+    self.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    resize();
+  });
+};
+
+CandlestickChart.prototype.setData = function(candles, indicators) {
+  this.data = candles || [];
+  this.indicators = indicators || {};
+  this.render();
+};
+
+CandlestickChart.prototype.render = function() {
+  if (!this.ctx || !this.data || this.data.length === 0) return;
+  var ctx = this.ctx;
+  ctx.fillStyle = '#0a0a1a';
+  ctx.fillRect(0, 0, this.width, this.height);
+  var margin = { top: 20, right: 60, bottom: 30, left: 10 };
+  var chartHeight = this.height - margin.top - margin.bottom;
+  var chartWidth = this.width - margin.left - margin.right;
+  var prices = [];
+  for (var p = 0; p < this.data.length; p++) { prices.push(this.data[p].high); prices.push(this.data[p].low); }
+  var minPrice = Math.min.apply(null, prices);
+  var maxPrice = Math.max.apply(null, prices);
+  var priceRange = maxPrice - minPrice;
+  var padding = priceRange * 0.05;
+  var adjMin = minPrice - padding;
+  var adjMax = maxPrice + padding;
+  var adjRange = adjMax - adjMin;
+
+  // Draw EMA lines
+  var self = this;
+  function drawLine(data, color) {
+    if (!data || data.length === 0) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    var cw = chartWidth / self.data.length;
+    for (var i = 0; i < data.length; i++) {
+      var x = margin.left + (i + (self.data.length - data.length)) * cw + cw / 2;
+      var y = margin.top + chartHeight - (data[i] - adjMin) / adjRange * chartHeight;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  if (this.indicators.ema9) drawLine(this.indicators.ema9, '#f59e0b');
+  if (this.indicators.ema21) drawLine(this.indicators.ema21, '#8b5cf6');
+
+  // Draw candles
+  var candleWidth = chartWidth / this.data.length;
+  var bodyWidth = Math.max(candleWidth * 0.7, 2);
+  for (var i = 0; i < this.data.length; i++) {
+    var candle = this.data[i];
+    var x = margin.left + i * candleWidth + candleWidth / 2;
+    var isBull = candle.close >= candle.open;
+    var color = isBull ? '#22c55e' : '#ef4444';
+    var highY = margin.top + (adjMax - candle.high) / adjRange * chartHeight;
+    var lowY = margin.top + (adjMax - candle.low) / adjRange * chartHeight;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, highY);
+    ctx.lineTo(x, lowY);
+    ctx.stroke();
+    var openY = margin.top + (adjMax - candle.open) / adjRange * chartHeight;
+    var closeY = margin.top + (adjMax - candle.close) / adjRange * chartHeight;
+    var bodyTop = Math.min(openY, closeY);
+    var bodyH = Math.max(Math.abs(closeY - openY), 1);
+    ctx.fillStyle = color;
+    ctx.fillRect(x - bodyWidth / 2, bodyTop, bodyWidth, bodyH);
+  }
+
+  // Draw price labels
+  ctx.fillStyle = '#9898b0';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'left';
+  for (var i = 0; i <= 5; i++) {
+    var price = adjMax - (adjRange / 5) * i;
+    var y = margin.top + (chartHeight / 5) * i;
+    var label = price >= 1000 ? price.toFixed(0) : price.toFixed(2);
+    ctx.fillText(label, this.width - margin.right + 5, y + 4);
+  }
+};
+
+var priceChart = null;
+var currentChartType = 'internal';
+
+function switchChart(type) {
+  currentChartType = type;
+  var internalBtn = document.getElementById('chart-internal-btn');
+  var tvBtn = document.getElementById('chart-tv-btn');
+  var internalContainer = document.getElementById('internal-chart-container');
+  var tvContainer = document.getElementById('tradingview-widget');
+  if (type === 'internal') {
+    if (internalBtn) internalBtn.classList.add('active');
+    if (tvBtn) tvBtn.classList.remove('active');
+    if (internalContainer) internalContainer.style.display = 'block';
+    if (tvContainer) tvContainer.style.display = 'none';
+    if (AppState.lastAnalysis) renderInternalChart(AppState.lastAnalysis);
+  } else {
+    if (tvBtn) tvBtn.classList.add('active');
+    if (internalBtn) internalBtn.classList.remove('active');
+    if (tvContainer) {
+      tvContainer.style.display = 'block';
+      tvContainer.innerHTML = '<iframe src="https://www.tradingview.com/widgetembed/?symbol=KUCOIN%3ABTCUSDT&interval=D&theme=dark&style=1" style="width:100%;height:500px;border:none;border-radius:8px"></iframe>';
+    }
+    if (internalContainer) internalContainer.style.display = 'none';
+  }
+}
+
+function renderInternalChart(result) {
+  if (!priceChart || currentChartType !== 'internal') return;
+  var candles = AppState.candleData;
+  if (!candles || candles.length === 0) return;
+  var closes = candles.map(function(c) { return c.close; });
+  var ema9 = calculateEMA(closes, 9);
+  var ema21 = calculateEMA(closes, 21);
+  priceChart.setData(candles, { ema9: ema9, ema21: ema21 });
+}
+
+// ============================================
 // TECHNICAL INDICATORS (25+)
 // ============================================
 function calculateRSI(prices, period) {
@@ -667,6 +815,7 @@ function renderNews() {
 function renderResults(result) {
   renderSignalCard(result);
   renderIndicators(result);
+  renderInternalChart(result);
   renderFearGreed(AppState.fearGreedData);
   renderTopTraders(result.topTraders);
   renderProbabilityChart(result);
@@ -752,6 +901,8 @@ function initApp() {
     analyzeBtn.addEventListener('click', function() { runAnalysis(); });
   }
   
+  priceChart = new CandlestickChart('price-chart');
+  
   runAnalysis();
 }
 
@@ -760,3 +911,4 @@ else initApp();
 
 window.toggleLanguage = toggleLanguage;
 window.runAnalysis = runAnalysis;
+window.switchChart = switchChart;
