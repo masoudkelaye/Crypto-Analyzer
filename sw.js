@@ -1,146 +1,142 @@
-// Service Worker for Crypto Analyzer Pro
-const CACHE_NAME = 'crypto-analyzer-v1';
-const OFFLINE_URL = '/';
+// Service Worker v2 - Cache Updated
+var CACHE_NAME = 'crypto-analyzer-v2';
 
-const ASSETS_TO_CACHE = [
+var ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/css/style.css',
-  '/js/app.js',
-  '/js/analysis.js',
-  '/js/i18n.js',
+  '/js/bundle.js',
   '/manifest.json',
   '/img/icon-192.png',
   '/img/icon-512.png'
 ];
 
-// Install event - cache essential assets
-self.addEventListener('install', (event) => {
+// Install - clear old cache, cache new files
+self.addEventListener('install', function(event) {
+  console.log('[SW v2] Installing...');
+  
+  // Delete ALL old caches
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      console.log('[SW] Caching app shell');
-      return cache.addAll(ASSETS_TO_CACHE).catch(err => {
-        console.warn('[SW] Some assets failed to cache:', err);
+    caches.keys().then(function(cacheNames) {
+      return Promise.all(
+        cacheNames.map(function(name) {
+          console.log('[SW v2] Deleting old cache:', name);
+          return caches.delete(name);
+        })
+      );
+    }).then(function() {
+      // Cache new files
+      return caches.open(CACHE_NAME).then(function(cache) {
+        console.log('[SW v2] Caching new files');
+        return cache.addAll(ASSETS_TO_CACHE).catch(function(err) {
+          console.warn('[SW v2] Some assets failed to cache:', err);
+        });
       });
     })
   );
+  
   self.skipWaiting();
 });
 
-// Activate event - clean old caches
-self.addEventListener('activate', (event) => {
+// Activate - claim all clients
+self.addEventListener('activate', function(event) {
+  console.log('[SW v2] Activating...');
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
+    caches.keys().then(function(cacheNames) {
       return Promise.all(
         cacheNames
-          .filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
+          .filter(function(name) { return name !== CACHE_NAME; })
+          .map(function(name) {
+            console.log('[SW v2] Deleting:', name);
+            return caches.delete(name);
+          })
       );
+    }).then(function() {
+      return self.clients.claim();
     })
   );
-  self.clients.claim();
 });
 
-// Fetch event - network first, fallback to cache
-self.addEventListener('fetch', (event) => {
-  // Skip non-GET requests
+// Fetch - network first, fallback to cache
+self.addEventListener('fetch', function(event) {
   if (event.request.method !== 'GET') return;
   
-  // Skip external API calls (always fetch fresh data)
-  const url = new URL(event.request.url);
-  if (url.hostname.includes('coingecko') || 
-      url.hostname.includes('alternative.me') ||
-      url.hostname.includes('tradingview')) {
+  var url;
+  try {
+    url = new URL(event.request.url);
+  } catch(e) {
+    return;
+  }
+  
+  // Skip external API calls
+  if (url.hostname.indexOf('binance') !== -1 || 
+      url.hostname.indexOf('coingecko') !== -1 || 
+      url.hostname.indexOf('alternative.me') !== -1 ||
+      url.hostname.indexOf('tradingview') !== -1 ||
+      url.hostname.indexOf('googleapis') !== -1 ||
+      url.hostname.indexOf('gstatic') !== -1) {
     return;
   }
   
   event.respondWith(
     fetch(event.request)
-      .then((response) => {
-        // Clone and cache successful responses
+      .then(function(response) {
         if (response.status === 200) {
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
+          var responseClone = response.clone();
+          caches.open(CACHE_NAME).then(function(cache) {
             cache.put(event.request, responseClone);
           });
         }
         return response;
       })
-      .catch(() => {
-        // Fallback to cache
-        return caches.match(event.request).then((response) => {
-          return response || caches.match(OFFLINE_URL);
+      .catch(function() {
+        return caches.match(event.request).then(function(response) {
+          return response || caches.match('/');
         });
       })
   );
 });
 
-// Push notification event
-self.addEventListener('push', (event) => {
+// Notification events
+self.addEventListener('push', function(event) {
   if (!event.data) return;
   
-  const data = event.data.json();
-  const title = data.title || 'Crypto Signal';
-  const options = {
-    body: data.body || 'New trading signal detected!',
+  var data = event.data.json();
+  var title = data.title || 'Crypto Signal';
+  var options = {
+    body: data.body || 'New trading signal!',
     icon: '/img/icon-192.png',
     badge: '/img/icon-192.png',
     vibrate: [200, 100, 200],
-    data: {
-      url: data.url || '/',
-      signal: data.signal,
-      probability: data.probability
-    },
+    data: { url: data.url || '/', signal: data.signal },
     actions: [
-      { action: 'view', title: '📊 View Analysis' },
+      { action: 'view', title: '📊 View' },
       { action: 'dismiss', title: '✕ Dismiss' }
     ],
     requireInteraction: true,
-    tag: `signal-${Date.now()}`
+    tag: 'signal-' + Date.now()
   };
   
-  event.waitUntil(
-    self.registration.showNotification(title, options)
-  );
+  event.waitUntil(self.registration.showNotification(title, options));
 });
 
-// Notification click event
-self.addEventListener('notificationclick', (event) => {
+self.addEventListener('notificationclick', function(event) {
   event.notification.close();
-  
   if (event.action === 'dismiss') return;
   
-  const urlToOpen = event.notification.data?.url || '/';
+  var urlToOpen = '/';
   
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // Focus existing window if open
-      for (const client of windowClients) {
-        if (client.url.includes(self.location.origin) && 'focus' in client) {
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(windowClients) {
+      for (var i = 0; i < windowClients.length; i++) {
+        var client = windowClients[i];
+        if (client.url.indexOf(self.location.origin) !== -1 && 'focus' in client) {
           return client.focus();
         }
       }
-      // Open new window
       if (clients.openWindow) {
         return clients.openWindow(urlToOpen);
       }
     })
   );
 });
-
-// Periodic background sync (for notifications)
-self.addEventListener('periodicsync', (event) => {
-  if (event.tag === 'crypto-analysis-sync') {
-    event.waitUntil(fetchAndNotify());
-  }
-});
-
-async function fetchAndNotify() {
-  try {
-    // This would fetch fresh data and send notifications
-    // Implementation depends on backend integration
-    console.log('[SW] Background sync triggered');
-  } catch (err) {
-    console.error('[SW] Background sync failed:', err);
-  }
-}
