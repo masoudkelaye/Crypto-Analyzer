@@ -1,5 +1,5 @@
 // Service Worker v2 - Cache Updated
-var CACHE_NAME = 'crypto-analyzer-v2';
+var CACHE_NAME = 'crypto-analyzer-v6';
 
 var ASSETS_TO_CACHE = [
   '/',
