@@ -2583,4 +2583,3 @@ if (document.readyState === 'loading') {
 window.toggleLanguage = toggleLanguage;
 window.runAnalysis = runAnalysis;
 window.switchChart = switchChart;
-}
